@@ -1,0 +1,2 @@
+import {db} from './db';
+export async function pruneTranscripts(now:Date){const result=await db.query("DELETE FROM messages WHERE created_at < $1",[new Date(now.getTime()-30*86400000)]);await db.query('DELETE FROM callbacks WHERE created_at < $1',[new Date(now.getTime()-30*86400000)]);await db.query('DELETE FROM confirmations WHERE expires_at < $1',[now]);await db.query('DELETE FROM sessions WHERE expires_at < $1',[now]);return result.rowCount??0;}
