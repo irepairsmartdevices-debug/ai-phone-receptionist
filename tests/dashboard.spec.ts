@@ -1,3 +1,36 @@
-import {test,expect} from '@playwright/test';
-test('dashboard links to a clearly labeled working simulator',async({page})=>{await page.goto('/');await expect(page.getByRole('heading',{name:'A little more time for repairs.'})).toBeVisible();await page.getByRole('link',{name:'Start a test conversation'}).click();await expect(page.getByText('Fixture mode', {exact:false}).first()).toBeVisible();await page.getByPlaceholder('Ask your receptionist…').fill('What are your hours?');await page.getByRole('button',{name:'Send message'}).click();await expect(page.getByText(/Monday–Friday/)).toBeVisible();await page.reload();await expect(page.getByText(/Monday–Friday/)).toBeVisible();});
-test('mobile simulator and settings remain usable',async({page})=>{await page.setViewportSize({width:390,height:844});await page.goto('/settings');await expect(page.getByRole('heading',{name:'Make it yours.'})).toBeVisible();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await page.goto('/test');await expect(page.getByRole('button',{name:'Send message'})).toBeVisible();});
+import { test, expect } from "@playwright/test";
+test("dashboard links to a clearly labeled working simulator", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(
+    page.getByRole("heading", { name: "A little more time for repairs." }),
+  ).toBeVisible();
+  await page.getByRole("link", { name: "Start a test conversation" }).click();
+  await expect(
+    page.getByText("Fixture mode", { exact: false }).first(),
+  ).toBeVisible();
+  await page
+    .getByPlaceholder("Ask your receptionist…")
+    .fill("What are your hours?");
+  await page.getByRole("button", { name: "Send message" }).click();
+  await expect(page.getByText(/Monday–Friday/)).toBeVisible();
+  await page.reload();
+  await expect(page.getByText(/Monday–Friday/)).toBeVisible();
+});
+test("mobile simulator and settings remain usable", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/settings");
+  await expect(
+    page.getByRole("heading", { name: "Make it yours." }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page.goto("/test");
+  await expect(
+    page.getByRole("button", { name: "Send message" }),
+  ).toBeVisible();
+});

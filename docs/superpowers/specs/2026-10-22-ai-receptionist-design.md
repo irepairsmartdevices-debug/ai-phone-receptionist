@@ -66,4 +66,4 @@ If the repair app is unavailable, explain that live information cannot be retrie
 ## Delivery boundaries
 Do not deploy, purchase numbers, or incur live provider charges during local implementation. Deployment and live credentials are later prerequisites. Reusable installation and startup instructions will be saved after testing the implementation. Existing isolated checkouts are sufficient; do not create worktrees unless explicitly requested.
 
-This specification is ready for user review. Implementation planning follows approval of this written document.
+The user approved this written specification and selected direct execution of the implementation plan. Local implementation and validation are recorded in docs/VALIDATION.md.

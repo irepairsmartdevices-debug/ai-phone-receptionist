@@ -1,0 +1,42 @@
+# Local validation and handoff
+
+The first local version implements the approved design's development workflow. It is not deployed, and real phone calls, delivered SMS codes and paid model requests remain unrun pending provider accounts, HTTPS deployment and secure credentials.
+
+## Verified capabilities
+
+- Dashboard, fixture simulator, persisted history, settings, callbacks, manual deletion and an hourly retention worker.
+- Source-grounded business answers and appointment collection using the source app's slots and revisioned, offering-specific intake questions.
+- Registered-contact verification with a conversation/ticket-scoped grant; no caller-ID-only access.
+- Browser staff authorization with state, PKCE, single-use codes and short-lived grants. Confirmed cancellations are staff-only, version checked, idempotent and audited. Intake and checkout status transitions remain in the repair app with their required information and photos; there is no unrestricted status setter.
+- Two separate local applications and PostgreSQL databases. Integration tests use the actual repair API rather than substituting fixture success for a real operation.
+- Signed phone webhook validation, duplicate delivery handling, staff call pairing, grounded model intent proposals and callback fallback. Live provider connectivity is not established by those local tests.
+
+## Evidence
+
+- Receptionist suite: 29 tests passed, including both-app HTTP, PostgreSQL, authorization, confirmation, retention, lost-response/restart recovery, DST selection and signed voice webhook cases.
+- Repair app suite: 278 tests passed. Its production build passed; existing CSS/Prisma adapter warnings do not change those test outcomes.
+- Production builds and receptionist type check passed.
+- Two fixture browser tests passed (desktop conversation persistence and mobile usability). One connected browser test passed (staff authorization through both apps, confirmed local ticket cancellation and authenticated call pairing).
+- Frozen installs, repeated migrations, seed setup, server stop/start and PostgreSQL readiness were exercised. The local repair administrator login was verified without printing credentials. Test fixtures preserve existing administrator credential records.
+- The development configuration generator preserved existing files; retention cleanup ran successfully as a one-shot job and as a running hourly worker.
+
+## Review and fixes
+
+One fresh reviewer assessed both repositories. All seven reported findings were fixed in a single regression-tested pass: pending-operation recovery, complete transcript-bearing retention cleanup, atomic voice state/cache updates, zero-question booking, runtime use of saved settings, unsuccessful-transfer fallback and replay of committed bookings after intake revision changes. A browser check additionally caught the mobile navigation overflow after adding Calls; wrapping navigation fixed it. No reviewer findings were deferred.
+
+## Decisions and costs
+
+1. Cloud skill helper scripts were not executable filesystem resources, so execution progress used a local ledger. Cost: manual bookkeeping.
+2. Work stayed in the existing isolated checkout. Cost: none; no extra worktree was needed.
+3. A blocked verified Prisma download initially prompted a parameterized PostgreSQL implementation in the receptionist. The download later became available and the repair app uses its existing Prisma setup. The temporary duplicate receptionist schema was removed. Cost: the two apps use different persistence libraries.
+4. Real ticket versions use the repair app's SHA-256 version digest; fixtures retain integer versions. Cost: integration clients accept digest strings as well as fixture integers.
+5. Intake questions come from the selected offering and source revision rather than a fixed power-on question. Cost: fixture datasets must define every question they exercise.
+6. The repair checkout is retained under `/workspace/shopify-phone-repair-booking`; an earlier temporary inspection copy was preserved after a cross-filesystem move could not remove its cache. A fresh frozen install and all required checks succeeded at the retained path. Cost: temporary disk usage, with no user work removed.
+
+## Repository and publication boundaries
+
+The receptionist work and the repair integration are local Git commits. They have not been pushed or merged into GitHub or the other Codex environment. The repair change is on `codex/receptionist-integration`, based on `ed1350abc9df14f365347679b13142bf29dfbd82`, with a portable review patch at `docs/integration/repair-api.patch`.
+
+The environment configuration draft records installation/startup instructions and both retained repositories. Saving a draft does not publish or deploy it. Fresh-task restoration of these local-only commits has not been verified; the platform documents limitations restoring unpublished local commits. Retain the patch and commit history and review the snapshot before relying on a new task.
+
+For live readiness, deploy both reviewed apps, configure the secure machine connection, Twilio, the AI provider and canonical HTTPS webhook origin, then verify a real inbound call, delivered customer verification, a confirmed operation and transfer/fallback. No production database migration, phone-number purchase or deployment was performed here.

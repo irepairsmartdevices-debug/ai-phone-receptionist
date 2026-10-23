@@ -1,0 +1,3 @@
+CREATE TABLE IF NOT EXISTS voice_calls(call_sid text PRIMARY KEY,conversation_id text NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,next_turn text NOT NULL,paired_session text,created_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS voice_events(event_id text PRIMARY KEY,call_sid text NOT NULL REFERENCES voice_calls(call_sid) ON DELETE CASCADE,response_xml text NOT NULL,created_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS voice_pairings(code_hash text PRIMARY KEY,call_sid text NOT NULL REFERENCES voice_calls(call_sid) ON DELETE CASCADE,expires_at timestamptz NOT NULL,attempts int NOT NULL DEFAULT 0,consumed_at timestamptz);

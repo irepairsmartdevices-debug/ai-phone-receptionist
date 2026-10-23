@@ -1,3 +1,80 @@
-import test from 'node:test';import assert from 'node:assert/strict';import {ConversationEngine,type State} from '../src/conversation/engine';import {FixtureRepairService} from '../src/repair/fixture';
-test('full booking selects a source slot and writes only after explicit confirmation',async()=>{const service=new FixtureRepairService();const engine=new ConversationEngine(service),actor={role:'customer' as const};let r=await engine.turn({step:'start'},'book',actor,'booking-flow');for(const input of ['1','1','2026-11-05','1','Jamie','Test','jamie@example.com','+15555550111','Broken screen','yes','no'])r=await engine.turn(r.state,input,actor,'booking-flow');assert.equal(r.state.step,'book-confirm');assert.match(r.text,/Nov|November/);assert.equal((await service.operation(r.state.operationId!)).ok,false);const state=r.state;r=await engine.turn(state,'confirm',actor,'booking-flow');assert.match(r.text,/DEMO-2001/);const duplicate=await engine.turn(state,'confirm',actor,'booking-flow');assert.match(duplicate.text,/expired|used/);});
-test('staff cancellation requires input-bound confirmation and terminal tickets cannot reopen',async()=>{const service=new FixtureRepairService(),engine=new ConversationEngine(service),actor={role:'staff' as const,grant:'fixture-staff'};let r=await engine.turn({step:'start'},'cancel',actor,'staff-test');r=await engine.turn(r.state,'1001',actor,'staff-test');assert.equal(r.state.step,'staff-confirm');r=await engine.turn(r.state,'confirm',actor,'staff-test');assert.match(r.text,/now cancelled/);r=await engine.turn({step:'staff-ticket'},'1001',actor,'staff-test');assert.match(r.text,/read-only/);});
+import test from "node:test";
+import assert from "node:assert/strict";
+import { ConversationEngine, type State } from "../src/conversation/engine";
+import { FixtureRepairService } from "../src/repair/fixture";
+test("full booking selects a source slot and writes only after explicit confirmation", async () => {
+  const service = new FixtureRepairService();
+  const engine = new ConversationEngine(service),
+    actor = { role: "customer" as const };
+  let r = await engine.turn({ step: "start" }, "book", actor, "booking-flow");
+  for (const input of [
+    "1",
+    "1",
+    "2026-11-05",
+    "1",
+    "Jamie",
+    "Test",
+    "jamie@example.com",
+    "+15555550111",
+    "Broken screen",
+    "yes",
+    "no",
+  ])
+    r = await engine.turn(r.state, input, actor, "booking-flow");
+  assert.equal(r.state.step, "book-confirm");
+  assert.match(r.text, /Nov|November/);
+  assert.equal((await service.operation(r.state.operationId!)).ok, false);
+  const state = r.state;
+  r = await engine.turn(state, "confirm", actor, "booking-flow");
+  assert.match(r.text, /DEMO-2001/);
+  const duplicate = await engine.turn(state, "confirm", actor, "booking-flow");
+  assert.match(duplicate.text, /DEMO-2001/);
+});
+test("staff cancellation requires input-bound confirmation and terminal tickets cannot reopen", async () => {
+  const service = new FixtureRepairService(),
+    engine = new ConversationEngine(service),
+    actor = { role: "staff" as const, grant: "fixture-staff" };
+  let r = await engine.turn({ step: "start" }, "cancel", actor, "staff-test");
+  r = await engine.turn(r.state, "1001", actor, "staff-test");
+  assert.equal(r.state.step, "staff-confirm");
+  r = await engine.turn(r.state, "confirm", actor, "staff-test");
+  assert.match(r.text, /now cancelled/);
+  r = await engine.turn({ step: "staff-ticket" }, "1001", actor, "staff-test");
+  assert.match(r.text, /read-only/);
+});
+test("booking asks every source-provided intake question for the selected repair", async () => {
+  const service = new FixtureRepairService();
+  const original = service.business.bind(service);
+  service.business = async () => {
+    const b = await original();
+    if (!b.ok) throw Error("Fixture unavailable");
+    return {
+      ...b,
+      value: {
+        ...b.value,
+        questions: [
+          { id: "liquid", text: "Has it had liquid damage?" },
+          { id: "locked", text: "Is the device locked?" },
+        ],
+      },
+    };
+  };
+  const engine = new ConversationEngine(service),
+    actor = { role: "customer" as const };
+  let r = await engine.turn({ step: "start" }, "book", actor, "dynamic-intake");
+  for (const value of [
+    "1",
+    "1",
+    "2026-11-05",
+    "1",
+    "Jamie",
+    "Test",
+    "jamie@example.com",
+    "+15555550111",
+    "Screen broken",
+  ])
+    r = await engine.turn(r.state, value, actor, "dynamic-intake");
+  assert.match(r.text, /liquid damage/);
+  r = await engine.turn(r.state, "no", actor, "dynamic-intake");
+  assert.match(r.text, /device locked/);
+});

@@ -1,0 +1,1224 @@
+diff --git a/.env.example b/.env.example
+index dea6dcb..111304f 100644
+--- a/.env.example
++++ b/.env.example
+@@ -18,3 +18,8 @@ TWILIO_FROM_NUMBER=""
+ # Random secret of at least 32 characters for the notification retry endpoint.
+ # Vercel adds its Bearer header when calling the configured daily cron job.
+ CRON_SECRET=""
++
++# Dedicated server-to-server receptionist integration; never reuse ADMIN_PASSWORD.
++RECEPTIONIST_API_TOKEN=
++# Exact receptionist HTTPS origin (localhost HTTP is allowed only for development).
++RECEPTIONIST_ORIGIN=
+diff --git a/README.md b/README.md
+index afe076c..3c283f9 100644
+--- a/README.md
++++ b/README.md
+@@ -236,3 +236,11 @@ In **Admin → Appointments**, choose **Edit ticket** to correct the customer's
+ Changing a contact phone does not change the customer's portal username or assign the ticket to another account. A changed number clears appointment SMS consent until the customer opts in again. Saving a ticket edit does not send a new email or text; pending messages with superseded contact, device, service, name, or price details are stopped. The editor rejects stale changes so a second browser cannot silently overwrite a newer edit.
+ 
+ **Delete ticket** opens a separate review and requires the exact displayed numeric ticket number. Deletion permanently removes that appointment, its before/after photos, checkout record, saved condition answers, queued notification records, and ticket-specific access challenges. Customer accounts, other tickets, employees, time records, and the ticket-number sequence remain. Deleted ticket links and photo links no longer open the record. An edit or deletion is temporarily blocked while an appointment message is processing; refresh and retry after it finishes.
++
++## AI receptionist integration
++
++The separate AI receptionist uses `/api/integrations/receptionist/v1/`. Configure a dedicated random `RECEPTIONIST_API_TOKEN` and the exact `RECEPTIONIST_ORIGIN`; use HTTPS except for loopback development. Its staff authorization flow reuses your existing admin/employee login, requires explicit approval and PKCE, and issues short-lived grants. Revoked/expired staff sessions are rejected on subsequent operations. For this integration, employees are restricted to their assigned locations; administrators can access all stores.
++
++Customers must verify a code delivered to the ticket's registered contact before reading its status. Caller ID alone grants no access. Missing message-provider configuration does not bypass verification. Customer-visible projections omit internal notes and account credentials.
++
++Bookings use the original availability/intake/notification workflow with transaction-scoped idempotency hooks. Confirmed cancellations require a staff grant and the exact current ticket version; their audit and notification records commit with the change. Intake and checkout prerequisites remain mandatory; there is no unrestricted status setter. Apply `20261023010000_receptionist_integration` with your normal migration process before enabling this API. No production migration or deployment was performed during local development.
+diff --git a/app/api/integrations/receptionist/v1/[...path]/route.ts b/app/api/integrations/receptionist/v1/[...path]/route.ts
+new file mode 100644
+index 0000000..3c0feae
+--- /dev/null
++++ b/app/api/integrations/receptionist/v1/[...path]/route.ts
+@@ -0,0 +1,286 @@
++import { NextRequest, NextResponse } from "next/server";
++import { randomBytes, randomUUID } from "node:crypto";
++import { cookies } from "next/headers";
++import { z } from "zod";
++import { Prisma } from "@prisma/client";
++import { db } from "@/lib/db";
++import { requireRepairActor, assertRepairActor } from "@/lib/staff-access";
++import { withBookingTransaction, slots } from "@/lib/booking";
++import {
++  digest,
++  machineAuthorized,
++  validRedirect,
++  pkceDigest,
++} from "@/lib/receptionist/auth";
++import * as service from "@/lib/receptionist/service";
++import { after } from "next/server";
++import { flushAppointmentNotifications } from "@/lib/notifications";
++export const dynamic = "force-dynamic";
++const contextSchema = z
++  .object({
++    conversationId: z.string().min(1).max(100),
++    operationId: z.string().min(1).max(100),
++  })
++  .strict();
++const json = (data: unknown) =>
++  JSON.parse(JSON.stringify(data)) as Prisma.InputJsonValue;
++const response = (data: unknown, status = 200) =>
++  NextResponse.json(data, {
++    status,
++    headers: {
++      "Cache-Control": "private, no-store",
++      "X-Content-Type-Options": "nosniff",
++    },
++  });
++const fail = (code: string, status = 400) =>
++  response({ ok: false, code }, status);
++function auth(request: Request) {
++  return machineAuthorized(request.headers.get("authorization"));
++}
++function callbackQuery(request: NextRequest) {
++  return z
++    .object({
++      redirect_uri: z.string(),
++      state: z.string().min(32).max(200),
++      code_challenge: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
++    })
++    .parse(Object.fromEntries(request.nextUrl.searchParams));
++}
++export async function GET(
++  request: NextRequest,
++  { params }: { params: Promise<{ path: string[] }> },
++) {
++  try {
++    const path = (await params).path.join("/");
++    if (path === "authorize") {
++      const q = callbackQuery(request);
++      if (!validRedirect(q.redirect_uri)) return fail("INVALID");
++      await requireRepairActor();
++      const csrf = randomBytes(32).toString("hex");
++      (await cookies()).set("receptionist_authorize", csrf, {
++        httpOnly: true,
++        sameSite: "strict",
++        secure: request.nextUrl.protocol === "https:",
++        maxAge: 300,
++        path: "/api/integrations/receptionist/v1/authorize",
++      });
++      const safe = (s: string) =>
++        s.replace(
++          /[&<>"']/g,
++          (c) =>
++            ({
++              "&": "&amp;",
++              "<": "&lt;",
++              ">": "&gt;",
++              '"': "&quot;",
++              "'": "&#39;",
++            })[c]!,
++        );
++      return new Response(
++        `<!doctype html><html><head><title>Connect receptionist</title></head><body><h1>Connect your staff account?</h1><p>The receptionist can read permitted tickets and request confirmed cancellations. Intake and checkout stay in this repair app.</p><form method="post"><input type="hidden" name="csrf" value="${csrf}"/>${Object.entries(
++          q,
++        )
++          .map(
++            ([k, v]) => `<input type="hidden" name="${k}" value="${safe(v)}"/>`,
++          )
++          .join(
++            "",
++          )}<button>Connect staff account</button></form></body></html>`,
++        {
++          headers: {
++            "Content-Type": "text/html",
++            "Cache-Control": "no-store",
++            "Content-Security-Policy": `default-src 'none'; form-action 'self' ${new URL(process.env.RECEPTIONIST_ORIGIN!).origin}; frame-ancestors 'none'`,
++          },
++        },
++      );
++    }
++    if (!auth(request)) return fail("UNAUTHORIZED", 401);
++    const p = request.nextUrl.searchParams;
++    if (path === "business")
++      return response({ ok: true, value: await service.business() });
++    if (path === "slots") {
++      const offering = await db.offering.findUnique({
++        where: { id: p.get("offeringId") ?? "" },
++      });
++      if (!offering) return fail("INVALID");
++      const locationId = p.get("locationId") ?? "";
++      return response({
++        ok: true,
++        value: (
++          await slots(p.get("date") ?? "", offering.duration, locationId)
++        ).map((start) => ({ start, locationId, offeringId: offering.id })),
++      });
++    }
++    if (path === "tickets")
++      return response(
++        await service.ticket(
++          p.get("reference") ?? "",
++          request.headers.get("x-receptionist-grant") ?? "",
++          p.get("conversationId") ?? "",
++        ),
++      );
++    if (path === "session") {
++      const actor = await service.staff(
++        request.headers.get("x-receptionist-grant") ?? "",
++      );
++      return actor
++        ? response({
++            ok: true,
++            value: { role: actor.role === "ADMIN" ? "admin" : "staff" },
++          })
++        : fail("UNAUTHORIZED", 401);
++    }
++    if (path.startsWith("operations/"))
++      return response(await service.operation(path.split("/")[1]));
++    return fail("NOT_FOUND", 404);
++  } catch {
++    return fail("UNAUTHORIZED", 401);
++  }
++}
++export async function POST(
++  request: NextRequest,
++  { params }: { params: Promise<{ path: string[] }> },
++) {
++  try {
++    const path = (await params).path.join("/");
++    if (path === "authorize") {
++      const origin = process.env.APP_URL;
++      if (!origin || request.headers.get("origin") !== new URL(origin).origin)
++        return fail("UNAUTHORIZED", 403);
++      const form = await request.formData(),
++        jar = await cookies(),
++        csrf = form.get("csrf");
++      if (
++        typeof csrf !== "string" ||
++        csrf !== jar.get("receptionist_authorize")?.value
++      )
++        return fail("UNAUTHORIZED", 403);
++      const q = z
++        .object({
++          redirect_uri: z.string(),
++          state: z.string().min(32).max(200),
++          code_challenge: z.string().regex(/^[\w-]{43}$/),
++        })
++        .parse(Object.fromEntries(form));
++      if (!validRedirect(q.redirect_uri)) return fail("INVALID");
++      const actor = await requireRepairActor(),
++        code = randomBytes(32).toString("hex");
++      await withBookingTransaction(async (tx) => {
++        await assertRepairActor(tx, actor);
++        await tx.receptionistRecord.create({
++          data: {
++            id: "code:" + digest(code),
++            kind: "authorization",
++            payload: json({
++              actor,
++              redirectUri: q.redirect_uri,
++              challenge: q.code_challenge,
++            }),
++            expiresAt: new Date(Date.now() + 300000),
++          },
++        });
++      });
++      jar.delete("receptionist_authorize");
++      const target = new URL(q.redirect_uri);
++      target.searchParams.set("code", code);
++      target.searchParams.set("state", q.state);
++      return NextResponse.redirect(target, 303);
++    }
++    if (!auth(request)) return fail("UNAUTHORIZED", 401);
++    const raw = await request.json();
++    if (path === "token") {
++      const b = z
++        .object({
++          code: z.string(),
++          verifier: z.string().min(43).max(128),
++          redirectUri: z.string(),
++        })
++        .strict()
++        .parse(raw);
++      const result = await withBookingTransaction(async (tx) => {
++        const row = await tx.receptionistRecord.findUnique({
++          where: { id: "code:" + digest(b.code) },
++        });
++        if (!row?.expiresAt || row.expiresAt <= new Date()) return null;
++        const p = row.payload as {
++          actor: Parameters<typeof service.issueStaffGrant>[0];
++          redirectUri: string;
++          challenge: string;
++        };
++        if (
++          !validRedirect(b.redirectUri) ||
++          p.redirectUri !== b.redirectUri ||
++          pkceDigest(b.verifier) !== p.challenge
++        )
++          return null;
++        await assertRepairActor(tx, p.actor);
++        await tx.receptionistRecord.delete({ where: { id: row.id } });
++        return {
++          grant: await service.issueStaffGrant(p.actor, tx),
++          role: p.actor.role === "ADMIN" ? "admin" : "staff",
++        };
++      });
++      return result
++        ? response({ ok: true, value: result })
++        : fail("UNAUTHORIZED", 401);
++    }
++    const { context, ...body } = z
++      .object({ context: contextSchema })
++      .passthrough()
++      .parse(raw);
++    if (path === "challenges") {
++      const b = z
++        .object({ reference: z.string().regex(/^\d{1,10}$/) })
++        .strict()
++        .parse(body);
++      return response({
++        ok: true,
++        value: await service.challenge(b.reference, context),
++      });
++    }
++    if (path === "verify") {
++      const b = z
++        .object({
++          challengeId: z.string().uuid(),
++          code: z.string().regex(/^\d{6}$/),
++        })
++        .strict()
++        .parse(body);
++      return response(await service.verify(b.challengeId, b.code, context));
++    }
++    if (path === "bookings") {
++      const r = await service.book(body, context);
++      if (r.ok)
++        after(async () => {
++          const a = await db.appointment.findUnique({
++            where: { ticketNumber: Number(r.value.reference) },
++          });
++          if (a) await flushAppointmentNotifications(a.id).catch(() => {});
++        });
++      return response(r);
++    }
++    if (path === "actions") {
++      const r = await service.changeStatus(
++        body,
++        request.headers.get("x-receptionist-grant") ?? "",
++        context,
++      );
++      if (r.ok)
++        after(async () => {
++          const a = await db.appointment.findUnique({
++            where: {
++              ticketNumber: Number(
++                (r.value as { reference: string }).reference,
++              ),
++            },
++          });
++          if (a) await flushAppointmentNotifications(a.id).catch(() => {});
++        });
++      return response(r);
++    }
++    return fail("NOT_FOUND", 404);
++  } catch {
++    return fail("INVALID");
++  }
++}
+diff --git a/lib/booking.ts b/lib/booking.ts
+index 6fdc58d..697955a 100644
+--- a/lib/booking.ts
++++ b/lib/booking.ts
+@@ -45,11 +45,12 @@ export async function withBookingTransaction<T>(work:(tx:Prisma.TransactionClien
+ // accepted by the customer or admin request schemas.
+ type IntakePhoto={bytes:Uint8Array;mimeType:string};
+ type StaffIntake={role:'ADMIN'|'EMPLOYEE';employeeId:string|null;photos?:IntakePhoto[];photo?:IntakePhoto;walkIn:boolean;assertAccess:(tx:Prisma.TransactionClient)=>Promise<unknown>};
+-type BookingResult=Prisma.AppointmentGetPayload<{include:typeof appointmentInclude}>&{customerAccountAccess?:{id:string;phone:string;sessionVersion:number;temporaryPassword:string}};
+-export async function reserve(data:{locationId:string;offeringId:string;start:string;firstName:string;lastName:string;email:string;phone:string;notes:string;smsConsent?:boolean;preRepairAnswers?:SubmittedPreRepairAnswer[]},id?:string,access?:{token?:string;expectedStart?:string;notify?:boolean;intake?:StaffIntake;customer?:CustomerActor|null;newCustomerCredential?:CustomerBookingCredential}):Promise<BookingResult>{
++export type BookingResult=Prisma.AppointmentGetPayload<{include:typeof appointmentInclude}>&{customerAccountAccess?:{id:string;phone:string;sessionVersion:number;temporaryPassword:string}};
++export async function reserve(data:{locationId:string;offeringId:string;start:string;firstName:string;lastName:string;email:string;phone:string;notes:string;smsConsent?:boolean;preRepairAnswers?:SubmittedPreRepairAnswer[]},id?:string,access?:{token?:string;expectedStart?:string;notify?:boolean;intake?:StaffIntake;customer?:CustomerActor|null;newCustomerCredential?:CustomerBookingCredential;integration?:{before:(tx:Prisma.TransactionClient)=>Promise<BookingResult|undefined>;after:(tx:Prisma.TransactionClient,appointment:BookingResult)=>Promise<void>}}):Promise<BookingResult>{
+  const intake=access?.intake,photos=intake?.photos??(intake?.photo?[intake.photo]:[]);
+  if(intake&&(photos.length<REPAIR_PHOTO_MIN_COUNT||photos.length>REPAIR_PHOTO_MAX_COUNT))throw new Error(`Add at least ${REPAIR_PHOTO_MIN_COUNT} pre-repair photos before booking (up to ${REPAIR_PHOTO_MAX_COUNT}).`);
+  return withBookingTransaction(async tx=>{
++  const replay=await access?.integration?.before(tx);if(replay)return replay;
+   if(intake){if(id)throw new Error('Use the repair intake action for an existing appointment.');await intake.assertAccess(tx);}
+   const existing=id?await tx.appointment.findUniqueOrThrow({where:{id},include:appointmentInclude}):null;
+   if(access?.token){
+@@ -91,6 +92,7 @@ export async function reserve(data:{locationId:string;offeringId:string;start:st
+    const managePath=canCustomerReschedule(appointment)?appointmentManagePath(appointment):undefined;
+    await enqueueAppointmentNotifications(tx,appointment,id?'RESCHEDULED':'BOOKED',existing,managePath);
+   }
++  await access?.integration?.after(tx,appointment);
+   // The initial password is returned once to the public booking handler only.
+   // It is never part of appointment persistence or notification payloads.
+   return portal?.newAccount?{...appointment,customerAccountAccess:portal.newAccount}:appointment;
+diff --git a/lib/receptionist-auth.test.ts b/lib/receptionist-auth.test.ts
+new file mode 100644
+index 0000000..caf2861
+--- /dev/null
++++ b/lib/receptionist-auth.test.ts
+@@ -0,0 +1,36 @@
++import test from "node:test";
++import assert from "node:assert/strict";
++import {
++  machineAuthorized,
++  pkceDigest,
++  validRedirect,
++} from "./receptionist/auth";
++test("machine credential uses dedicated token and rejects absent or malformed authorization", () => {
++  assert.equal(machineAuthorized("Bearer abc", "abc"), true);
++  assert.equal(machineAuthorized("Bearer abc", ""), false);
++  assert.equal(machineAuthorized("Bearer abcd", "abc"), false);
++});
++test("authorization callbacks are exact allowlisted URLs and PKCE is stable", () => {
++  assert.equal(
++    validRedirect(
++      "http://localhost:3000/api/auth/callback",
++      "http://localhost:3000",
++    ),
++    true,
++  );
++  assert.equal(
++    validRedirect(
++      "https://evil.example/api/auth/callback",
++      "http://localhost:3000",
++    ),
++    false,
++  );
++  assert.equal(
++    validRedirect(
++      "http://localhost:3000/api/auth/callback?evil=1",
++      "http://localhost:3000",
++    ),
++    false,
++  );
++  assert.match(pkceDigest("a".repeat(43)), /^[\w-]{43}$/);
++});
+diff --git a/lib/receptionist-service.test.ts b/lib/receptionist-service.test.ts
+new file mode 100644
+index 0000000..8e70f2b
+--- /dev/null
++++ b/lib/receptionist-service.test.ts
+@@ -0,0 +1,159 @@
++import test from "node:test";
++import { randomInt } from "node:crypto";
++import assert from "node:assert/strict";
++import {
++  challenge,
++  verify,
++  ticket,
++  changeStatus,
++  issueStaffGrant,
++} from "./receptionist/service";
++import { db } from "./db";
++test("verified integration reads remain bound to ticket, conversation and delivered code", async () => {
++  const original = await db.appointment.findFirstOrThrow();
++  const { id, ticketNumber, ...data } = original;
++  void id;
++  void ticketNumber;
++  const t = await db.appointment.create({
++    data: {
++      ...data,
++      status: "CONFIRMED",
++      manageKey: null,
++      customerId: null,
++      portalEligible: true,
++      portalPhone: "+1555" + String(randomInt(1000000, 9999999)),
++    },
++  });
++  let code = "";
++  const ctx = { conversationId: "integration-read", operationId: "read-op" };
++  const c = await challenge(
++    String(t.ticketNumber),
++    ctx,
++    async (_phone, value) => {
++      code = value;
++    },
++  );
++  assert.match(code, /^\d{6}$/);
++  assert.equal((await verify(c.challengeId, "000000", ctx)).ok, false);
++  const v = await verify(c.challengeId, code, ctx);
++  assert.equal(v.ok, true);
++  if (!v.ok) return;
++  const r = await ticket(
++    String(t.ticketNumber),
++    v.value.grant,
++    ctx.conversationId,
++  );
++  assert.equal(r.ok, true);
++  assert.equal(
++    (await ticket(String(t.ticketNumber), v.value.grant, "other-conversation"))
++      .ok,
++    false,
++  );
++  assert.equal((await verify(c.challengeId, code, ctx)).ok, false);
++});
++test("staff cancellations enforce version and atomically audit idempotent writes", async () => {
++  const admin = await db.adminCredential.findUniqueOrThrow({
++    where: { id: 1 },
++  });
++  const grant = await issueStaffGrant({
++    role: "ADMIN",
++    employeeId: null,
++    name: "Admin",
++    sessionVersion: admin.sessionVersion,
++    expires: Date.now() + 600000,
++  });
++  const original = await db.appointment.findFirstOrThrow();
++  const { id, ticketNumber, ...data } = original;
++  void id;
++  void ticketNumber;
++  const t = await db.appointment.create({
++    data: { ...data, status: "CONFIRMED", manageKey: null, customerId: null },
++  });
++  const before = await ticket(String(t.ticketNumber), grant, "staff-session");
++  assert.equal(before.ok, true);
++  if (!before.ok) return;
++  const action = {
++      ticketReference: String(t.ticketNumber),
++      expectedVersion: before.value.version,
++      targetStatus: "CANCELLED",
++      confirmationId: "explicit-test-confirmation",
++    },
++    ctx = {
++      conversationId: "staff-session",
++      operationId: "cancel-test-" + t.id,
++    };
++  const result = await changeStatus(action, grant, ctx);
++  assert.equal(result.ok, true);
++  assert.deepEqual(await changeStatus(action, grant, ctx), result);
++  assert.equal(
++    await db.receptionistRecord.count({
++      where: { id: "operation:" + ctx.operationId, kind: "operation" },
++    }),
++    1,
++  );
++  const record = await db.receptionistRecord.findUniqueOrThrow({
++    where: { id: "operation:" + ctx.operationId },
++  });
++  assert.match(JSON.stringify(record.payload), /oldStatus|CONFIRMED/);
++  assert.equal(
++    (
++      await changeStatus({ ...action, expectedVersion: "stale" }, grant, {
++        ...ctx,
++        operationId: ctx.operationId + "-stale",
++      })
++    ).ok,
++    false,
++  );
++});
++test("booking replay returns original reference after intake revision changes", async () => {
++  const { business, book } = await import("./receptionist/service");
++  const { slots } = await import("./booking");
++  const { randomUUID } = await import("node:crypto");
++  const snapshot = await business(),
++    offering = snapshot.offerings[0],
++    location = snapshot.locations[0];
++  let start: string | undefined;
++  for (let d = 1; d < 8 && !start; d++)
++    start = (
++      await slots(
++        new Date(Date.now() + d * 86400000).toISOString().slice(0, 10),
++        offering.duration,
++        location.id,
++      )
++    )[0];
++  assert.ok(start);
++  const input = {
++      locationId: location.id,
++      offeringId: offering.id,
++      start,
++      firstName: "Replay",
++      lastName: "Test",
++      email: "replay@example.invalid",
++      phone: "+15555550111",
++      issue: "Local test",
++      intakeRevision: snapshot.intakeRevision,
++      answers: Object.fromEntries(
++        snapshot.questions
++          .filter((q) => q.offeringIds.includes(offering.id))
++          .map((q) => [q.id, false]),
++      ),
++      smsConsent: false,
++      confirmationId: "confirmed-replay-test",
++    },
++    context = { conversationId: randomUUID(), operationId: randomUUID() };
++  const initial = await book(input, context);
++  assert.equal(initial.ok, true);
++  const question = await db.preRepairQuestion.findFirstOrThrow();
++  try {
++    await db.preRepairQuestion.update({
++      where: { id: question.id },
++      data: { updatedAt: new Date(Date.now() + 1000) },
++    });
++    assert.deepEqual(await book(input, context), initial);
++  } finally {
++    await db.preRepairQuestion.update({
++      where: { id: question.id },
++      data: { updatedAt: question.updatedAt },
++    });
++  }
++});
+diff --git a/lib/receptionist/auth.ts b/lib/receptionist/auth.ts
+new file mode 100644
+index 0000000..166635a
+--- /dev/null
++++ b/lib/receptionist/auth.ts
+@@ -0,0 +1,33 @@
++import { createHash, timingSafeEqual } from "node:crypto";
++export const digest = (s: string) =>
++  createHash("sha256").update(s).digest("hex");
++export const pkceDigest = (s: string) =>
++  createHash("sha256").update(s).digest("base64url");
++export function machineAuthorized(
++  header: string | null,
++  token = process.env.RECEPTIONIST_API_TOKEN ?? "",
++) {
++  if (!token || !header?.startsWith("Bearer ")) return false;
++  const a = Buffer.from(digest(header.slice(7))),
++    b = Buffer.from(digest(token));
++  return timingSafeEqual(a, b);
++}
++export function validRedirect(
++  uri: string,
++  origin = process.env.RECEPTIONIST_ORIGIN ?? "",
++) {
++  try {
++    const u = new URL(origin);
++    if (
++      u.protocol !== "https:" &&
++      !(
++        u.protocol === "http:" &&
++        ["localhost", "127.0.0.1"].includes(u.hostname)
++      )
++    )
++      return false;
++    return uri === u.origin + "/api/auth/callback";
++  } catch {
++    return false;
++  }
++}
+diff --git a/lib/receptionist/service.ts b/lib/receptionist/service.ts
+new file mode 100644
+index 0000000..9e771ea
+--- /dev/null
++++ b/lib/receptionist/service.ts
+@@ -0,0 +1,525 @@
++import {
++  createHash,
++  createHmac,
++  randomBytes,
++  randomInt,
++  randomUUID,
++} from "node:crypto";
++import { Prisma, type Appointment } from "@prisma/client";
++import { z } from "zod";
++import { db } from "../db";
++import {
++  withBookingTransaction,
++  reserve,
++  appointmentInclude,
++} from "../booking";
++import { assertRepairActor, type StaffActor } from "../staff-access";
++import { adminTicketVersion } from "../admin-ticket-version";
++import { takeCustomerRateLimits } from "../customer-auth-throttle";
++import { sendCustomerVerificationSms } from "../customer-verification-gateway";
++import { normalizeSmsPhone } from "../notification-contact";
++import { enqueueAppointmentNotifications } from "../notifications";
++import { digest } from "./auth";
++type Context = { conversationId: string; operationId: string };
++type Result<T> = { ok: true; value: T } | { ok: false; code: string };
++const yes = <T>(value: T): Result<T> => ({ ok: true, value });
++const no = (code: string): { ok: false; code: string } => ({ ok: false, code });
++const json = (value: unknown) =>
++  JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
++const challengeSchema = z.object({
++  reference: z.string(),
++  conversationId: z.string(),
++  hash: z.string(),
++  phone: z.string().nullable(),
++  attempts: z.number(),
++  delivered: z.boolean(),
++});
++const grantSchema = z.discriminatedUnion("type", [
++  z.object({
++    type: z.literal("customer"),
++    ticketId: z.string(),
++    conversationId: z.string(),
++    phone: z.string(),
++  }),
++  z.object({
++    type: z.literal("staff"),
++    actor: z.object({
++      role: z.enum(["ADMIN", "EMPLOYEE"]),
++      employeeId: z.string().nullable(),
++      name: z.string(),
++      sessionVersion: z.number(),
++      expires: z.number(),
++    }),
++  }),
++]);
++export async function issueStaffGrant(
++  actor: StaffActor,
++  tx: Prisma.TransactionClient = db,
++) {
++  const token = randomBytes(32).toString("hex");
++  await tx.receptionistRecord.create({
++    data: {
++      id: "grant:" + digest(token),
++      kind: "grant",
++      payload: json({ type: "staff", actor }),
++      expiresAt: new Date(Math.min(Date.now() + 900000, actor.expires ?? 0)),
++    },
++  });
++  return token;
++}
++async function readGrant(token: string, tx: Prisma.TransactionClient = db) {
++  const r = await tx.receptionistRecord.findUnique({
++    where: { id: "grant:" + digest(token) },
++  });
++  if (!r?.expiresAt || r.expiresAt <= new Date()) return null;
++  const parsed = grantSchema.safeParse(r.payload);
++  return parsed.success ? parsed.data : null;
++}
++export async function staff(
++  token: string,
++  tx: Prisma.TransactionClient = db,
++  locationId?: string,
++) {
++  const g = await readGrant(token, tx);
++  if (g?.type !== "staff") return null;
++  try {
++    await assertRepairActor(tx, g.actor);
++    if (
++      locationId &&
++      g.actor.role === "EMPLOYEE" &&
++      !(await tx.employeeLocation.findUnique({
++        where: {
++          employeeId_locationId: {
++            employeeId: g.actor.employeeId!,
++            locationId,
++          },
++        },
++      }))
++    )
++      return null;
++    return g.actor;
++  } catch {
++    return null;
++  }
++}
++const codeHash = (id: string, code: string) => {
++  const key = process.env.SESSION_SECRET;
++  if (!key || key.length < 32)
++    throw Error("Verification signing secret missing");
++  return createHmac("sha256", key)
++    .update(id + ":" + code)
++    .digest("hex");
++};
++export async function challenge(
++  reference: string,
++  context: Context,
++  deliver = sendCustomerVerificationSms,
++) {
++  const challengeId = randomUUID(),
++    code = String(randomInt(100000, 1000000));
++  const phone = await withBookingTransaction(async (tx) => {
++    const a = /^\d{1,10}$/.test(reference)
++      ? await tx.appointment.findUnique({
++          where: { ticketNumber: Number(reference) },
++        })
++      : null;
++    const phone = a?.portalEligible
++      ? normalizeSmsPhone(a.portalPhone ?? a.phone)
++      : null;
++    const allowed = await takeCustomerRateLimits(tx, [
++      {
++        scope: "receptionist-ticket",
++        value: reference,
++        windowMs: 900000,
++        max: 3,
++      },
++      {
++        scope: "receptionist-contact",
++        value: phone ?? "unknown",
++        windowMs: 900000,
++        max: 3,
++      },
++      {
++        scope: "receptionist-conversation",
++        value: context.conversationId,
++        windowMs: 900000,
++        max: 3,
++      },
++    ]);
++    await tx.receptionistRecord.create({
++      data: {
++        id: "challenge:" + challengeId,
++        kind: "challenge",
++        payload: json({
++          reference,
++          conversationId: context.conversationId,
++          hash: codeHash(challengeId, code),
++          phone: allowed ? phone : null,
++          attempts: 0,
++          delivered: false,
++        }),
++        expiresAt: new Date(Date.now() + 300000),
++      },
++    });
++    return allowed ? phone : null;
++  });
++  if (phone)
++    try {
++      await deliver(phone, code);
++      await withBookingTransaction(async (tx) => {
++        const row = await tx.receptionistRecord.findUniqueOrThrow({
++          where: { id: "challenge:" + challengeId },
++        });
++        const d = challengeSchema.parse(row.payload);
++        await tx.receptionistRecord.update({
++          where: { id: row.id },
++          data: { payload: json({ ...d, delivered: true }) },
++        });
++      });
++    } catch {
++      /* Generic response prevents enumeration and never returns provider errors. */
++    }
++  return { challengeId };
++}
++export async function verify(
++  challengeId: string,
++  code: string,
++  context: Context,
++): Promise<Result<{ grant: string }>> {
++  return withBookingTransaction(async (tx) => {
++    const r = await tx.receptionistRecord.findUnique({
++      where: { id: "challenge:" + challengeId },
++    });
++    if (!r?.expiresAt || r.expiresAt <= new Date()) return no("UNAUTHORIZED");
++    const c = challengeSchema.parse(r.payload);
++    await tx.receptionistRecord.update({
++      where: { id: r.id },
++      data: { payload: json({ ...c, attempts: c.attempts + 1 }) },
++    });
++    if (
++      !c.delivered ||
++      c.attempts >= 5 ||
++      c.conversationId !== context.conversationId ||
++      !/^\d{6}$/.test(code) ||
++      codeHash(challengeId, code) !== c.hash ||
++      !c.phone
++    )
++      return no("UNAUTHORIZED");
++    const a = await tx.appointment.findUnique({
++      where: { ticketNumber: Number(c.reference) },
++    });
++    if (
++      !a?.portalEligible ||
++      normalizeSmsPhone(a.portalPhone ?? a.phone) !== c.phone
++    )
++      return no("UNAUTHORIZED");
++    const grant = randomBytes(32).toString("hex");
++    await tx.receptionistRecord.create({
++      data: {
++        id: "grant:" + digest(grant),
++        kind: "grant",
++        payload: json({
++          type: "customer",
++          ticketId: a.id,
++          conversationId: c.conversationId,
++          phone: c.phone,
++        }),
++        expiresAt: new Date(Date.now() + 900000),
++      },
++    });
++    await tx.receptionistRecord.delete({ where: { id: r.id } });
++    return yes({ grant });
++  });
++}
++function safeTicket(
++  a: Appointment & {
++    location: { name: string };
++    offering: { model: { name: string }; service: { name: string } };
++  },
++) {
++  return {
++    reference: String(a.ticketNumber).padStart(4, "0"),
++    status: a.status,
++    version: adminTicketVersion(a),
++    device: a.offering.model.name,
++    service: a.offering.service.name,
++    location: a.location.name,
++  };
++}
++export async function ticket(
++  reference: string,
++  token: string,
++  conversationId: string,
++) {
++  return withBookingTransaction(async (tx) => {
++    if (!/^\d{1,10}$/.test(reference)) return no("INVALID");
++    const a = await tx.appointment.findUnique({
++      where: { ticketNumber: Number(reference) },
++      include: appointmentInclude,
++    });
++    if (!a) return no("NOT_FOUND");
++    const g = await readGrant(token, tx);
++    if (!g) return no("UNAUTHORIZED");
++    if (g.type === "staff") {
++      if (!(await staff(token, tx, a.locationId))) return no("UNAUTHORIZED");
++    } else if (
++      g.ticketId !== a.id ||
++      g.conversationId !== conversationId ||
++      !a.portalEligible ||
++      normalizeSmsPhone(a.portalPhone ?? a.phone) !== g.phone
++    )
++      return no("UNAUTHORIZED");
++    return yes(safeTicket(a));
++  });
++}
++const actionSchema = z
++  .object({
++    ticketReference: z.string().regex(/^\d{1,10}$/),
++    expectedVersion: z.string(),
++    targetStatus: z.literal("CANCELLED"),
++    confirmationId: z.string().min(1).max(200),
++  })
++  .strict();
++export async function changeStatus(
++  raw: unknown,
++  token: string,
++  context: Context,
++) {
++  const parsed = actionSchema.safeParse(raw);
++  if (!parsed.success) return no("INVALID");
++  const action = parsed.data,
++    identity = digest(token),
++    fingerprint = digest(
++      JSON.stringify({
++        action,
++        identity,
++        conversationId: context.conversationId,
++      }),
++    );
++  return withBookingTransaction(async (tx) => {
++    const actor = await staff(token, tx);
++    if (!actor) return no("UNAUTHORIZED");
++    const existing = await tx.receptionistRecord.findUnique({
++      where: { id: "operation:" + context.operationId },
++    });
++    if (existing) {
++      const data = existing.payload as { fingerprint: string; result: unknown };
++      return data.fingerprint === fingerprint
++        ? (data.result as ReturnType<typeof yes>)
++        : no("CONFLICT");
++    }
++    const a = await tx.appointment.findUnique({
++      where: { ticketNumber: Number(action.ticketReference) },
++      include: appointmentInclude,
++    });
++    let result: Result<unknown>;
++    if (!a) result = no("NOT_FOUND");
++    else if (!(await staff(token, tx, a.locationId)))
++      result = no("UNAUTHORIZED");
++    else if (adminTicketVersion(a) !== action.expectedVersion)
++      result = no("STALE");
++    else if (!["CONFIRMED", "IN_PROGRESS"].includes(a.status))
++      result = no("INVALID");
++    else {
++      const updated = await tx.appointment.update({
++        where: { id: a.id },
++        data: { status: "CANCELLED", notificationRevision: { increment: 1 } },
++        include: appointmentInclude,
++      });
++      await enqueueAppointmentNotifications(tx, updated, "CANCELLED", a);
++      result = yes(safeTicket(updated));
++    }
++    await tx.receptionistRecord.create({
++      data: {
++        id: "operation:" + context.operationId,
++        kind: "operation",
++        payload: json({
++          fingerprint,
++          identity,
++          conversationId: context.conversationId,
++          result,
++          actor: { role: actor.role, employeeId: actor.employeeId },
++          ticketReference: action.ticketReference,
++          oldStatus: a?.status ?? null,
++          targetStatus: "CANCELLED",
++          confirmationId: action.confirmationId,
++          at: new Date().toISOString(),
++        }),
++      },
++    });
++    return result;
++  });
++}
++export async function operation(operationId: string) {
++  const row = await db.receptionistRecord.findUnique({
++    where: { id: "operation:" + operationId },
++  });
++  if (!row) return no("NOT_FOUND");
++  const p = row.payload as { result: Result<{ reference: string }> };
++  return yes({
++    state: p.result.ok ? "succeeded" : "failed",
++    ...(p.result.ok ? { reference: p.result.value.reference } : {}),
++  });
++}
++export async function business() {
++  const [locations, offerings, questions] = await Promise.all([
++    db.location.findMany({
++      where: { enabled: true },
++      include: { businessHours: true },
++    }),
++    db.offering.findMany({
++      include: { model: { include: { brand: true } }, service: true },
++    }),
++    db.preRepairQuestion.findMany({
++      where: { enabled: true, archived: false },
++      orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
++    }),
++  ]);
++  const intakeRevision = digest(
++    JSON.stringify(questions.map((q) => [q.id, q.updatedAt.toISOString()])),
++  );
++  return {
++    name: "Repair Studio",
++    profile:
++      "Prices are estimates; final cost requires shop confirmation. No completion time is promised.",
++    locations: locations.map((l) => ({
++      id: l.id,
++      name: l.name,
++      address: l.address,
++      timeZone: l.timeZone,
++      hours: l.businessHours
++        .map(
++          (h) =>
++            `${["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][h.day]}: ${h.enabled ? `${Math.floor(h.open / 60)}:${String(h.open % 60).padStart(2, "0")}–${Math.floor(h.close / 60)}:${String(h.close % 60).padStart(2, "0")}` : "closed"}`,
++        )
++        .join(", "),
++    })),
++    offerings: offerings.map((o) => ({
++      id: o.id,
++      device: o.model.name,
++      service: o.service.name,
++      price: o.price / 100,
++      duration: o.duration,
++    })),
++    intakeRevision,
++    questions: questions.map((q) => ({
++      id: q.id,
++      text: q.question,
++      version: q.updatedAt.toISOString(),
++      offeringIds: offerings
++        .filter((o) => o.model.brand.categoryId === q.categoryId)
++        .map((o) => o.id),
++    })),
++  };
++}
++const bookingSchema = z
++  .object({
++    locationId: z.string(),
++    offeringId: z.string(),
++    start: z.string().datetime({ offset: true }),
++    firstName: z.string().min(1).max(80),
++    lastName: z.string().max(80),
++    email: z.string().email(),
++    phone: z.string(),
++    issue: z.string().min(1).max(3000),
++    intakeRevision: z.string(),
++    answers: z.record(z.boolean()),
++    smsConsent: z.boolean(),
++    confirmationId: z.string().min(1),
++  })
++  .strict();
++export async function book(raw: unknown, context: Context) {
++  const parsed = bookingSchema.safeParse(raw);
++  if (!parsed.success) return no("INVALID");
++  const input = parsed.data,
++    phone = normalizeSmsPhone(input.phone);
++  if (!phone) return no("INVALID");
++  const fingerprint = digest(
++    JSON.stringify({ input, conversationId: context.conversationId }),
++  );
++  const previous = await db.receptionistRecord.findUnique({
++    where: { id: "operation:" + context.operationId },
++  });
++  if (previous) {
++    const p = previous.payload as {
++      fingerprint: string;
++      result: Result<{ reference: string }>;
++    };
++    return p.fingerprint === fingerprint ? p.result : no("CONFLICT");
++  }
++  const snapshot = await business();
++  if (snapshot.intakeRevision !== input.intakeRevision) return no("STALE");
++  try {
++    const row = await reserve(
++      {
++        locationId: input.locationId,
++        offeringId: input.offeringId,
++        start: new Date(input.start).toISOString(),
++        firstName: input.firstName,
++        lastName: input.lastName,
++        email: input.email,
++        phone,
++        notes: input.issue,
++        smsConsent: input.smsConsent,
++        preRepairAnswers: snapshot.questions
++          .filter(
++            (q) =>
++              q.offeringIds.includes(input.offeringId) &&
++              input.answers[q.id] !== undefined,
++          )
++          .map((q) => ({
++            questionId: q.id,
++            answer: input.answers[q.id],
++            questionVersion: q.version,
++          })),
++      },
++      undefined,
++      {
++        integration: {
++          before: async (tx) => {
++            const old = await tx.receptionistRecord.findUnique({
++              where: { id: "operation:" + context.operationId },
++            });
++            if (!old) return undefined;
++            const p = old.payload as {
++              fingerprint: string;
++              appointmentId: string;
++            };
++            if (p.fingerprint !== fingerprint)
++              throw Error("IDEMPOTENCY_CONFLICT");
++            return tx.appointment.findUniqueOrThrow({
++              where: { id: p.appointmentId },
++              include: appointmentInclude,
++            });
++          },
++          after: async (tx, a) => {
++            await tx.receptionistRecord.create({
++              data: {
++                id: "operation:" + context.operationId,
++                kind: "operation",
++                payload: json({
++                  fingerprint,
++                  appointmentId: a.id,
++                  conversationId: context.conversationId,
++                  result: yes({
++                    reference: String(a.ticketNumber).padStart(4, "0"),
++                  }),
++                  kind: "BOOKING",
++                  confirmationId: input.confirmationId,
++                  at: new Date().toISOString(),
++                }),
++              },
++            });
++          },
++        },
++      },
++    );
++    return yes({ reference: String(row.ticketNumber).padStart(4, "0") });
++  } catch (e) {
++    return no(
++      e instanceof Error && e.message === "IDEMPOTENCY_CONFLICT"
++        ? "CONFLICT"
++        : "INVALID",
++    );
++  }
++}
+diff --git a/prisma/migrations/20261023010000_receptionist_integration/migration.sql b/prisma/migrations/20261023010000_receptionist_integration/migration.sql
+new file mode 100644
+index 0000000..52eb233
+--- /dev/null
++++ b/prisma/migrations/20261023010000_receptionist_integration/migration.sql
+@@ -0,0 +1,8 @@
++CREATE TABLE "ReceptionistRecord" (
++ "id" TEXT NOT NULL PRIMARY KEY,
++ "kind" TEXT NOT NULL,
++ "payload" JSONB NOT NULL,
++ "expiresAt" TIMESTAMP(3),
++ "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
++);
++CREATE INDEX "ReceptionistRecord_kind_expiresAt_idx" ON "ReceptionistRecord"("kind","expiresAt");
+diff --git a/prisma/schema.prisma b/prisma/schema.prisma
+index afb2918..e9fbd10 100644
+--- a/prisma/schema.prisma
++++ b/prisma/schema.prisma
+@@ -348,3 +348,13 @@ model DisplayOrder {
+  revision Int @default(1)
+  updatedAt DateTime @default(now()) @updatedAt
+ }
++
++// Opaque, expiring authorization records and durable integration operations.
++model ReceptionistRecord {
++ id String @id
++ kind String
++ payload Json
++ expiresAt DateTime?
++ createdAt DateTime @default(now())
++ @@index([kind,expiresAt])
++}
+diff --git a/scripts/receptionist-test-fixture.ts b/scripts/receptionist-test-fixture.ts
+new file mode 100644
+index 0000000..6fda8aa
+--- /dev/null
++++ b/scripts/receptionist-test-fixture.ts
+@@ -0,0 +1,61 @@
++// Local integration test data only. Never runs against a remote/production database.
++import { createAdminSession } from "../lib/auth";
++import { writeFileSync } from "node:fs";
++import { randomInt, randomUUID } from "node:crypto";
++import { db } from "../lib/db";
++import { challenge, issueStaffGrant } from "../lib/receptionist/service";
++async function main() {
++  const url = new URL(process.env.DATABASE_URL ?? "");
++  if (
++    process.env.NODE_ENV === "production" ||
++    !["localhost", "127.0.0.1"].includes(url.hostname) ||
++    url.pathname !== "/repair_integration"
++  )
++    throw Error("Dedicated local integration database required");
++  const original = await db.appointment.findFirstOrThrow();
++  const { id, ticketNumber, ...data } = original;
++  void id;
++  void ticketNumber;
++  const ticket = await db.appointment.create({
++    data: {
++      ...data,
++      status: "CONFIRMED",
++      portalEligible: true,
++      portalPhone: "+1555" + String(randomInt(1000000, 9999999)),
++      customerId: null,
++      manageKey: null,
++    },
++  });
++  const credential = await db.adminCredential.findUniqueOrThrow({
++    where: { id: 1 },
++  });
++  const grant = await issueStaffGrant({
++    role: "ADMIN",
++    employeeId: null,
++    name: "Local Test Admin",
++    sessionVersion: credential.sessionVersion,
++    expires: Date.now() + 600000,
++  });
++  const conversationId = randomUUID();
++  let code = "";
++  const c = await challenge(
++    String(ticket.ticketNumber),
++    { conversationId, operationId: randomUUID() },
++    async (_phone, value) => {
++      code = value;
++    },
++  );
++  writeFileSync(
++    process.argv[2],
++    JSON.stringify({
++      reference: String(ticket.ticketNumber).padStart(4, "0"),
++      grant,
++      conversationId,
++      code,
++      challengeId: c.challengeId,
++      adminCookie: createAdminSession(credential.sessionVersion),
++    }),
++    { mode: 0o600 },
++  );
++}
++main().finally(() => db.$disconnect());

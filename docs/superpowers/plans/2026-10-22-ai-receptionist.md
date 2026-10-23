@@ -1,6 +1,6 @@
 # AI Repair Receptionist Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Build a receptionist for repair questions, appointment booking, verified ticket lookups, and authenticated staff status changes.
 
@@ -63,11 +63,11 @@ Every task follows a red/green test cycle and a scoped commit. The assertions be
 
 **Interfaces:** Produces the shared types and `RepairService` above, `createConversation(mode):Promise<{id:string}>`, `appendMessage(id,role,text):Promise<void>`, and `recordOutcome(id,operationId,result):Promise<void>`. Fixture dataset contains two clearly fictional stores, tickets in each supported status, and no real customer contacts.
 
-- [ ] Write tests asserting schema rejection of unknown statuses, stripping of temporaryPassword/manageUrl/internal notes, fixture booking idempotency, and conversation persistence across repository instances. Example: `assert.equal(TicketSchema.parse({...validTicket,temporaryPassword:'redacted-test'}).temporaryPassword, undefined)` (access via a record in the test).
-- [ ] Run `npm test -- tests/contracts.test.ts tests/persistence.test.ts`; confirm intended failures before implementing. Bootstrap only the runner/config needed to execute tests first.
-- [ ] Implement schemas, fixture adapter, PostgreSQL storage, migration, and minimal app shell. Configure `npm test`, `npm run typecheck`, `npm run build`, and `npm run test:integration`; keep secrets absent from examples and logs.
-- [ ] Run focused tests against a dedicated test PostgreSQL database, run migrations twice, and run typecheck/build. Expected: tests execute, migrations are repeatable, persisted records survive reconnect, build succeeds.
-- [ ] Commit as `feat: add receptionist contracts and local persistence`.
+- [x] Write tests asserting schema rejection of unknown statuses, stripping of temporaryPassword/manageUrl/internal notes, fixture booking idempotency, and conversation persistence across repository instances. Example: `assert.equal(TicketSchema.parse({...validTicket,temporaryPassword:'redacted-test'}).temporaryPassword, undefined)` (access via a record in the test).
+- [x] Run `npm test -- tests/contracts.test.ts tests/persistence.test.ts`; confirm intended failures before implementing. Bootstrap only the runner/config needed to execute tests first.
+- [x] Implement schemas, fixture adapter, PostgreSQL storage, migration, and minimal app shell. Configure `npm test`, `npm run typecheck`, `npm run build`, and `npm run test:integration`; keep secrets absent from examples and logs.
+- [x] Run focused tests against a dedicated test PostgreSQL database, run migrations twice, and run typecheck/build. Expected: tests execute, migrations are repeatable, persisted records survive reconnect, build succeeds.
+- [x] Commit as `feat: add receptionist contracts and local persistence`.
 
 ### Task 2: Grounded, permission-aware test conversations
 
@@ -75,11 +75,11 @@ Every task follows a red/green test cycle and a scoped commit. The assertions be
 
 **Interfaces:** Consumes `RepairService`; produces `handleTurn(conversationId,text,actor):Promise<{text:string; mode:Mode; operationId?:string}>`, with actor derived by the server, never submitted as a trusted browser role. Fixture-only test actor sessions are allowed solely on loopback in explicit fixture mode and rejected in connected mode/production. Produces `issueConfirmation(binding):Promise<string>` and `consumeConfirmation(id,binding):Promise<boolean>` using persistent single-use records.
 
-- [ ] Write tests for AI disclosure, source-grounded hours/prices, clarification for ambiguous ticket digits, verified-only reads, no caller-ID trust, and no staff authority from prompt text. Assert customer `changeStatus` attempts cause zero adapter writes; confirmation expiry, changed versions and replay also cause zero writes.
-- [ ] Run `npm test -- tests/conversation.test.ts tests/confirmation.test.ts`; confirm failures for missing behavior.
-- [ ] Implement explicit conversation states for question, verification, booking collection, confirmation, staff action, unavailable service, and callback. Validate tools independently of generated language. Display source-provided slots in location time including offset for ambiguous DST hours. Separate SMS consent from booking confirmation.
-- [ ] Run those suites, including a DST-day booking and outage: no guessed slots, no invented success, missing verification causes no ticket response, prompt injection cannot change actor or tool privileges.
-- [ ] Commit as `feat: add safe receptionist conversation workflow`.
+- [x] Write tests for AI disclosure, source-grounded hours/prices, clarification for ambiguous ticket digits, verified-only reads, no caller-ID trust, and no staff authority from prompt text. Assert customer `changeStatus` attempts cause zero adapter writes; confirmation expiry, changed versions and replay also cause zero writes.
+- [x] Run `npm test -- tests/conversation.test.ts tests/confirmation.test.ts`; confirm failures for missing behavior.
+- [x] Implement explicit conversation states for question, verification, booking collection, confirmation, staff action, unavailable service, and callback. Validate tools independently of generated language. Display source-provided slots in location time including offset for ambiguous DST hours. Separate SMS consent from booking confirmation.
+- [x] Run those suites, including a DST-day booking and outage: no guessed slots, no invented success, missing verification causes no ticket response, prompt injection cannot change actor or tool privileges.
+- [x] Commit as `feat: add safe receptionist conversation workflow`.
 
 ### Task 3: Dashboard, settings, messages and retention
 
@@ -87,11 +87,11 @@ Every task follows a red/green test cycle and a scoped commit. The assertions be
 
 **Interfaces:** Consumes stored conversations and `handleTurn`; produces `requireStaff(request)` and `requireAdmin(request)` request guards; `pruneTranscripts(now):Promise<number>` removes messages older than 30 days without storing verification codes or full transcripts in audit metadata.
 
-- [ ] Write browser tests asserting fixture banner, saved conversation detail, accessible keyboard navigation, narrow-screen layout, administrator-only settings, and callback capture. Add retention tests at 30-day boundaries and manual deletion tests.
-- [ ] Run `npm run test:browser -- tests/dashboard.spec.ts` and focused retention tests; confirm expected failures.
-- [ ] Implement overview, history, test screen, settings, readiness, deletion and protected cleanup endpoint. Default audio recording off; redact codes/secrets before persistence. Keep simulator authority controls strictly fixture-only.
-- [ ] Run PostgreSQL retention tests and browser smoke against the running app; restart the app and confirm history/settings survive. Run typecheck/build. Document exact install/start/readiness steps and fixture limitations.
-- [ ] Commit as `feat: add receptionist dashboard and simulator`.
+- [x] Write browser tests asserting fixture banner, saved conversation detail, accessible keyboard navigation, narrow-screen layout, administrator-only settings, and callback capture. Add retention tests at 30-day boundaries and manual deletion tests.
+- [x] Run `npm run test:browser -- tests/dashboard.spec.ts` and focused retention tests; confirm expected failures.
+- [x] Implement overview, history, test screen, settings, readiness, deletion and protected cleanup endpoint. Default audio recording off; redact codes/secrets before persistence. Keep simulator authority controls strictly fixture-only.
+- [x] Run PostgreSQL retention tests and browser smoke against the running app; restart the app and confirm history/settings survive. Run typecheck/build. Document exact install/start/readiness steps and fixture limitations.
+- [x] Commit as `feat: add receptionist dashboard and simulator`.
 
 **Phase A exit:** Independently usable local fixture demonstration; no claim of connection to real tickets or live calls.
 
@@ -103,12 +103,12 @@ Every task follows a red/green test cycle and a scoped commit. The assertions be
 
 **Interfaces:** Exposes shared contract over versioned HTTPS routes with a dedicated machine credential. Authorization uses server-stored random single-use codes, redirect URI allowlisting, state and PKCE, five-minute code expiry, and 15-minute revocable staff grants. Customer challenges use six-digit cryptographically random codes, HMAC hashes with a dedicated secret, five-minute expiry, five attempts, and per-ticket/contact/IP send limits (three per 15 minutes). Verification grants expire after 15 minutes and bind ticket and conversation. Responses do not distinguish absent tickets from failed delivery to unauthenticated callers.
 
-- [ ] Reinspect repair HEAD, instructions, auth, notification and customer-release modules; record any incompatible changes and adapt filenames before editing. Preserve source app behavior.
-- [ ] Write tests for machine auth failure, unknown-ticket enumeration resistance, wrong/expired/replayed code, delivery unavailable, send limits, conversation binding, state/PKCE/redirect failures, grant revocation and location restrictions.
-- [ ] Run `npm test` with repository runner selecting the new suites as supported; confirm intended failures.
-- [ ] Implement additive persistence and routes using existing staff/customer domain identity; deliver codes only through the registered contact channel. Store credential digests and grant hashes; never return secrets in public routes or logs. Require HTTPS except loopback development.
-- [ ] Run new tests plus existing customer-auth and staff-access suites, migrate/reapply on disposable PostgreSQL, and confirm public/private field allowlists and role revocation against the actual database.
-- [ ] Commit repair changes as `feat: add scoped receptionist authorization API`.
+- [x] Reinspect repair HEAD, instructions, auth, notification and customer-release modules; record any incompatible changes and adapt filenames before editing. Preserve source app behavior.
+- [x] Write tests for machine auth failure, unknown-ticket enumeration resistance, wrong/expired/replayed code, delivery unavailable, send limits, conversation binding, state/PKCE/redirect failures, grant revocation and location restrictions.
+- [x] Run `npm test` with repository runner selecting the new suites as supported; confirm intended failures.
+- [x] Implement additive persistence and routes using existing staff/customer domain identity; deliver codes only through the registered contact channel. Store credential digests and grant hashes; never return secrets in public routes or logs. Require HTTPS except loopback development.
+- [x] Run new tests plus existing customer-auth and staff-access suites, migrate/reapply on disposable PostgreSQL, and confirm public/private field allowlists and role revocation against the actual database.
+- [x] Commit repair changes as `feat: add scoped receptionist authorization API`.
 
 ### Task 5: Repair-service transactional booking and status actions
 
@@ -116,11 +116,11 @@ Every task follows a red/green test cycle and a scoped commit. The assertions be
 
 **Interfaces:** Implements `ticket`, `book`, `changeStatus`, and `operation` contract. Idempotency is scoped to integration identity and operation ID; repeated key with different input returns CONFLICT. Mutation and audit success commit together. Expected version compares under the same write lock used by the existing repair domain.
 
-- [ ] Write failing database tests for duplicate/concurrent booking, stale intake revision, missing consent, cross-customer reads, unreleased checkout fields, wrong-location staff, stale versions, audit rollback, terminal-ticket changes and duplicate operations with changed payload.
-- [ ] Run new PostgreSQL suites and confirm failures.
-- [ ] Implement writes through existing booking/intake/checkout/cancellation functions. Refactor only as needed to share transactional primitives without changing their existing semantics. Never assign status directly from an AI request. Reject intake/checkout transitions with missing required records; return a repair-app link for staff completion.
-- [ ] Run new integration tests plus existing booking concurrency, notification, intake/checkout and customer-ticket suites. Assert exactly one booking and one success audit for duplicate operations; no private fields leak and no existing workflow changes.
-- [ ] Commit repair changes as `feat: add audited receptionist repair operations`.
+- [x] Write failing database tests for duplicate/concurrent booking, stale intake revision, missing consent, cross-customer reads, unreleased checkout fields, wrong-location staff, stale versions, audit rollback, terminal-ticket changes and duplicate operations with changed payload.
+- [x] Run new PostgreSQL suites and confirm failures.
+- [x] Implement writes through existing booking/intake/checkout/cancellation functions. Refactor only as needed to share transactional primitives without changing their existing semantics. Never assign status directly from an AI request. Reject intake/checkout transitions with missing required records; return a repair-app link for staff completion.
+- [x] Run new integration tests plus existing booking concurrency, notification, intake/checkout and customer-ticket suites. Assert exactly one booking and one success audit for duplicate operations; no private fields leak and no existing workflow changes.
+- [x] Commit repair changes as `feat: add audited receptionist repair operations`.
 
 ### Task 6: Connected receptionist and two-app validation
 
@@ -128,11 +128,11 @@ Every task follows a red/green test cycle and a scoped commit. The assertions be
 
 **Interfaces:** HTTP adapter implements `RepairService`; application sessions contain server-held grant references, use secure HTTP-only cookies and CSRF protection for mutations. Reads have a five-second deadline and at most two retries with bounded backoff. Writes never retry with a new operation ID; timeouts return UNCERTAIN pending reconciliation.
 
-- [ ] Write tests for malformed/credential-bearing upstream responses, unknown states, wrong content type, timeout, disconnect after commit, session fixation, cross-site mutations, revoked grants and fixture-to-connected leakage.
-- [ ] Run focused suites; confirm failures.
-- [ ] Implement server-only credential use, strict schema projections, safe error mapping, callback validation, user session rotation and scoped authorization. Require an administrator to change service settings; validate service URL against configured deployment origin to avoid arbitrary network requests.
-- [ ] Run both apps on separate ports and separate test databases. Execute real verification via a captured development delivery transport, booking with duplicate operation IDs, authorized staff change, customer denial, logout/revocation and source outage. Browser smoke proves connected sign-in, ticket result, booking result and audited change. Do not use mocks for this exit check.
-- [ ] Run builds/typechecks for both repositories, save tested setup/start instructions in the environment draft, and commit as `feat: connect receptionist to repair software`.
+- [x] Write tests for malformed/credential-bearing upstream responses, unknown states, wrong content type, timeout, disconnect after commit, session fixation, cross-site mutations, revoked grants and fixture-to-connected leakage.
+- [x] Run focused suites; confirm failures.
+- [x] Implement server-only credential use, strict schema projections, safe error mapping, callback validation, user session rotation and scoped authorization. Require an administrator to change service settings; validate service URL against configured deployment origin to avoid arbitrary network requests.
+- [x] Run both apps on separate ports and separate test databases. Execute real verification via a captured development delivery transport, booking with duplicate operation IDs, authorized staff change, customer denial, logout/revocation and source outage. Browser smoke proves connected sign-in, ticket result, booking result and audited change. Do not use mocks for this exit check.
+- [x] Run builds/typechecks for both repositories, save tested setup/start instructions in the environment draft, and commit as `feat: connect receptionist to repair software`.
 
 **Phase B exit:** Connected local workflow verified against both applications. Production configuration and deployment remain outstanding.
 
@@ -144,11 +144,11 @@ Every task follows a red/green test cycle and a scoped commit. The assertions be
 
 **Interfaces:** `proposeTurn(messages,allowedTools):Promise<Proposal>` generates an untrusted structured proposal passed to task 2 authorization. `handleVoiceWebhook(request):Promise<Response>` validates signature against configured canonical external URL, deduplicates event IDs, maps call to conversation and emits TwiML. Use Twilio speech gather plus server-generated responses for first version; streaming audio is outside this plan. `pairCall(staffSession,callId):Promise<void>` requires authenticated session, one-time pairing confirmation from that call and bounded expiry; pairing never replaces repair-service authorization.
 
-- [ ] Write tests for invalid signatures, proxy URL mismatch, repeated/reordered webhooks, malicious model tool proposals, unpaired staff write, interrupted/duplicated turn, no transfer destination, uncertain write during disconnect, and absent provider credentials.
-- [ ] Run focused suites; confirm failures.
-- [ ] Implement provider adapters with finite deadlines and no raw secrets in model input. Disable recording, require pairing for staff call actions, confirm writes explicitly, transfer only to configured destinations and offer callback capture on failure. Calls disclose AI identity; never read codes/passwords/internal notes back in summaries.
-- [ ] Use signed local webhook requests and mocked external provider transport to verify TwiML response, deduplication, role enforcement, transfer/fallback and operation reconciliation. Verify conversation and tool audit persist after hangup. Run full local tests/build/typecheck.
-- [ ] Commit as `feat: add AI and phone provider adapters`.
+- [x] Write tests for invalid signatures, proxy URL mismatch, repeated/reordered webhooks, malicious model tool proposals, unpaired staff write, interrupted/duplicated turn, no transfer destination, uncertain write during disconnect, and absent provider credentials.
+- [x] Run focused suites; confirm failures.
+- [x] Implement provider adapters with finite deadlines and no raw secrets in model input. Disable recording, require pairing for staff call actions, confirm writes explicitly, transfer only to configured destinations and offer callback capture on failure. Calls disclose AI identity; never read codes/passwords/internal notes back in summaries.
+- [x] Use signed local webhook requests and mocked external provider transport to verify TwiML response, deduplication, role enforcement, transfer/fallback and operation reconciliation. Verify conversation and tool audit persist after hangup. Run full local tests/build/typecheck.
+- [x] Commit as `feat: add AI and phone provider adapters`.
 
 ### Task 8: Repeatable setup and readiness handoff
 
@@ -156,12 +156,16 @@ Every task follows a red/green test cycle and a scoped commit. The assertions be
 
 **Interfaces:** Readiness reports separately: fixture usable, repair connection verified, phone adapter locally verified, real inbound call verified. Missing credentials or deployments cannot be reported as passing checks.
 
-- [ ] Test readiness checks fail for missing service URL, machine credentials, staff auth, provider binding, public webhook origin and transfer destination; disconnected modes remain explicit.
-- [ ] Reexecute frozen install, migrations, startup and representative functional requests in documented directories. Repeat migrations and restart only services started for this task. Check tracked/untracked changes for unintended generated modifications.
-- [ ] Save complete tested `install_script` and `start_skill` through environment configuration tooling, preserving existing requirements. Check binding presence without printing values; add only missing supported requirements. Raw database credentials and locally used signing secrets require secure runtime variables rather than proxy placeholders. Do not place reserved provider variable names into unsupported secret fields.
-- [ ] Report passing tests with counts and diagnosed failures. Provide the separate repair-repository change for review without publishing or deploying either app.
+- [x] Test readiness checks fail for missing service URL, machine credentials, staff auth, provider binding, public webhook origin and transfer destination; disconnected modes remain explicit.
+- [x] Reexecute frozen install, migrations, startup and representative functional requests in documented directories. Repeat migrations and restart only services started for this task. Check tracked/untracked changes for unintended generated modifications.
+- [x] Save complete tested `install_script` and `start_skill` through environment configuration tooling, preserving existing requirements. Check binding presence without printing values; add only missing supported requirements. Raw database credentials and locally used signing secrets require secure runtime variables rather than proxy placeholders. Do not place reserved provider variable names into unsupported secret fields.
+- [x] Report passing tests with counts and diagnosed failures. Provide the separate repair-repository change for review without publishing or deploying either app.
 - [ ] After the user separately arranges deployment and provider accounts, run a real inbound call covering AI response, verified ticket lookup, booking or staff action, and transfer/fallback. Until then explicitly mark this live-call acceptance check unrun.
-- [ ] Commit documentation as `docs: document receptionist setup and readiness`.
+- [x] Commit documentation as `docs: document receptionist setup and readiness`.
+
+## Execution outcome
+
+Implemented directly in this session. Local implementation and validation are complete; the real inbound-call check remains unrun pending deployment and provider accounts. See `docs/VALIDATION.md` for evidence and implementation decisions.
 
 ## Plan self-review
 

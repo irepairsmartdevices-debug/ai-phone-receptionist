@@ -1,17 +1,195 @@
-import {randomUUID} from 'node:crypto';
-import {BookingSchema,ok,type RepairService,type Business,type Context,type BookingInput,type StaffAction,type Result,type Ticket,type Operation} from '../contracts/repair';
-export const fixtureBusiness:Business={name:'Repair Studio · Demo',profile:'Fictional demonstration data. Screen repair estimates are subject to inspection. No promised completion times.',locations:[{id:'demo-north',name:'Demo North',address:'Fictional location — not a real store',timeZone:'America/Chicago',hours:'Monday–Friday, 9 AM–6 PM'},{id:'demo-south',name:'Demo South',address:'Fictional location — not a real store',timeZone:'America/Chicago',hours:'Monday–Friday, 10 AM–6 PM'}],offerings:[{id:'screen',device:'Demo Phone',service:'Screen repair',price:99,duration:60},{id:'battery',device:'Demo Phone',service:'Battery replacement',price:69,duration:45}],intakeRevision:'1',questions:[{id:'power',text:'Does the device power on?'}]};
-export class FixtureRepairService implements RepairService{
- private tickets=new Map<string,Ticket>(['CONFIRMED','IN_PROGRESS','COMPLETED','CANCELLED'].map((status,i)=>[String(1001+i),{reference:String(1001+i),status:status as Ticket['status'],version:1,device:'Demo Phone',service:'Screen repair',location:'Demo North'}]));
- private operations=new Map<string,{input:string;result:Result<{reference:string}>}>();
- private challenges=new Map<string,{reference:string;conversationId:string;expires:number;attempts:number}>();
- private grants=new Map<string,{reference:string;conversationId:string;expires:number}>();
- async business(){return ok(fixtureBusiness);}
- async slots(locationId:string,offeringId:string,date:string){if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!fixtureBusiness.locations.some(l=>l.id===locationId)||!fixtureBusiness.offerings.some(o=>o.id===offeringId))return {ok:false,code:'INVALID'} as const;return ok([10,12,14].map(hour=>({start:`${date}T${hour}:00:00-06:00`,locationId,offeringId})));}
- async beginVerification(reference:string,context:Context){const challengeId=randomUUID();this.challenges.set(challengeId,{reference,conversationId:context.conversationId,expires:Date.now()+300000,attempts:0});return ok({challengeId});}
- async verify(challengeId:string,code:string,context:Context){const c=this.challenges.get(challengeId);if(!c||c.expires<Date.now()||c.attempts++>=5||c.conversationId!==context.conversationId||code!=='123456'||!this.tickets.has(c.reference))return {ok:false,code:'UNAUTHORIZED'} as const;this.challenges.delete(challengeId);const grant=`fixture-${randomUUID()}`;this.grants.set(grant,{reference:c.reference,conversationId:c.conversationId,expires:Date.now()+900000});return ok({grant});}
- async ticket(reference:string,grant:string,context:Context){const g=this.grants.get(grant);const ticket=this.tickets.get(reference);if((grant!=='fixture-staff'&&(!g||g.reference!==reference||g.conversationId!==context.conversationId||g.expires<Date.now()))||!ticket)return {ok:false,code:'UNAUTHORIZED'} as const;return ok({...ticket});}
- async book(input:BookingInput,context:Context):Promise<Result<{reference:string}>>{if(!BookingSchema.safeParse(input).success||input.intakeRevision!=='1')return {ok:false,code:'INVALID'};const key=`${context.conversationId}:${context.operationId}`,old=this.operations.get(key),serialized=JSON.stringify(input);if(old)return old.input===serialized?old.result:{ok:false,code:'CONFLICT'};const result=ok({reference:`DEMO-${this.operations.size+2001}`});this.operations.set(key,{input:serialized,result});return result;}
- async changeStatus(action:StaffAction,staffGrant:string,context:Context):Promise<Result<Ticket>>{if(staffGrant!=='fixture-staff')return {ok:false,code:'UNAUTHORIZED'};const t=this.tickets.get(action.ticketReference);if(!t)return {ok:false,code:'NOT_FOUND'};if(t.version!==action.expectedVersion)return {ok:false,code:'STALE'};if(['COMPLETED','CANCELLED'].includes(t.status)||action.targetStatus!=='CANCELLED')return {ok:false,code:'INVALID'};const result={...t,status:'CANCELLED' as const,version:t.version+1};this.tickets.set(t.reference,result);return ok(result);}
- async operation(operationId:string):Promise<Result<Operation>>{const value=[...this.operations.entries()].find(([k])=>k.endsWith(`:${operationId}`))?.[1];return value?.result.ok?ok({state:'succeeded',reference:value.result.value.reference}):{ok:false,code:'NOT_FOUND'};}
+import { randomUUID } from "node:crypto";
+import {
+  BookingSchema,
+  ok,
+  type RepairService,
+  type Business,
+  type Context,
+  type BookingInput,
+  type StaffAction,
+  type Result,
+  type Ticket,
+  type Operation,
+} from "../contracts/repair";
+export const fixtureBusiness: Business = {
+  name: "Repair Studio · Demo",
+  profile:
+    "Fictional demonstration data. Screen repair estimates are subject to inspection. No promised completion times.",
+  locations: [
+    {
+      id: "demo-north",
+      name: "Demo North",
+      address: "Fictional location — not a real store",
+      timeZone: "America/Chicago",
+      hours: "Monday–Friday, 9 AM–6 PM",
+    },
+    {
+      id: "demo-south",
+      name: "Demo South",
+      address: "Fictional location — not a real store",
+      timeZone: "America/Chicago",
+      hours: "Monday–Friday, 10 AM–6 PM",
+    },
+  ],
+  offerings: [
+    {
+      id: "screen",
+      device: "Demo Phone",
+      service: "Screen repair",
+      price: 99,
+      duration: 60,
+    },
+    {
+      id: "battery",
+      device: "Demo Phone",
+      service: "Battery replacement",
+      price: 69,
+      duration: 45,
+    },
+  ],
+  intakeRevision: "1",
+  questions: [{ id: "power", text: "Does the device power on?" }],
+};
+export class FixtureRepairService implements RepairService {
+  private tickets = new Map<string, Ticket>(
+    ["CONFIRMED", "IN_PROGRESS", "COMPLETED", "CANCELLED"].map((status, i) => [
+      String(1001 + i),
+      {
+        reference: String(1001 + i),
+        status: status as Ticket["status"],
+        version: 1,
+        device: "Demo Phone",
+        service: "Screen repair",
+        location: "Demo North",
+      },
+    ]),
+  );
+  private operations = new Map<
+    string,
+    { input: string; result: Result<{ reference: string }> }
+  >();
+  private challenges = new Map<
+    string,
+    {
+      reference: string;
+      conversationId: string;
+      expires: number;
+      attempts: number;
+    }
+  >();
+  private grants = new Map<
+    string,
+    { reference: string; conversationId: string; expires: number }
+  >();
+  async business() {
+    return ok(fixtureBusiness);
+  }
+  async slots(locationId: string, offeringId: string, date: string) {
+    if (
+      !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
+      !fixtureBusiness.locations.some((l) => l.id === locationId) ||
+      !fixtureBusiness.offerings.some((o) => o.id === offeringId)
+    )
+      return { ok: false, code: "INVALID" } as const;
+    return ok(
+      [10, 12, 14].map((hour) => ({
+        start: `${date}T${hour}:00:00-06:00`,
+        locationId,
+        offeringId,
+      })),
+    );
+  }
+  async beginVerification(reference: string, context: Context) {
+    const challengeId = randomUUID();
+    this.challenges.set(challengeId, {
+      reference,
+      conversationId: context.conversationId,
+      expires: Date.now() + 300000,
+      attempts: 0,
+    });
+    return ok({ challengeId });
+  }
+  async verify(challengeId: string, code: string, context: Context) {
+    const c = this.challenges.get(challengeId);
+    if (
+      !c ||
+      c.expires < Date.now() ||
+      c.attempts++ >= 5 ||
+      c.conversationId !== context.conversationId ||
+      code !== "123456" ||
+      !this.tickets.has(c.reference)
+    )
+      return { ok: false, code: "UNAUTHORIZED" } as const;
+    this.challenges.delete(challengeId);
+    const grant = `fixture-${randomUUID()}`;
+    this.grants.set(grant, {
+      reference: c.reference,
+      conversationId: c.conversationId,
+      expires: Date.now() + 900000,
+    });
+    return ok({ grant });
+  }
+  async ticket(reference: string, grant: string, context: Context) {
+    const g = this.grants.get(grant);
+    const ticket = this.tickets.get(reference);
+    if (
+      (grant !== "fixture-staff" &&
+        (!g ||
+          g.reference !== reference ||
+          g.conversationId !== context.conversationId ||
+          g.expires < Date.now())) ||
+      !ticket
+    )
+      return { ok: false, code: "UNAUTHORIZED" } as const;
+    return ok({ ...ticket });
+  }
+  async book(
+    input: BookingInput,
+    context: Context,
+  ): Promise<Result<{ reference: string }>> {
+    if (!BookingSchema.safeParse(input).success || input.intakeRevision !== "1")
+      return { ok: false, code: "INVALID" };
+    const key = `${context.conversationId}:${context.operationId}`,
+      old = this.operations.get(key),
+      serialized = JSON.stringify(input);
+    if (old)
+      return old.input === serialized
+        ? old.result
+        : { ok: false, code: "CONFLICT" };
+    const result = ok({ reference: `DEMO-${this.operations.size + 2001}` });
+    this.operations.set(key, { input: serialized, result });
+    return result;
+  }
+  async changeStatus(
+    action: StaffAction,
+    staffGrant: string,
+    context: Context,
+  ): Promise<Result<Ticket>> {
+    if (staffGrant !== "fixture-staff")
+      return { ok: false, code: "UNAUTHORIZED" };
+    const t = this.tickets.get(action.ticketReference);
+    if (!t) return { ok: false, code: "NOT_FOUND" };
+    if (t.version !== action.expectedVersion)
+      return { ok: false, code: "STALE" };
+    if (
+      ["COMPLETED", "CANCELLED"].includes(t.status) ||
+      action.targetStatus !== "CANCELLED"
+    )
+      return { ok: false, code: "INVALID" };
+    const result = {
+      ...t,
+      status: "CANCELLED" as const,
+      version: Number(t.version) + 1,
+    };
+    this.tickets.set(t.reference, result);
+    return ok(result);
+  }
+  async operation(operationId: string): Promise<Result<Operation>> {
+    const value = [...this.operations.entries()].find(([k]) =>
+      k.endsWith(`:${operationId}`),
+    )?.[1];
+    return value?.result.ok
+      ? ok({ state: "succeeded", reference: value.result.value.reference })
+      : { ok: false, code: "NOT_FOUND" };
+  }
 }

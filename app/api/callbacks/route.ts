@@ -1,2 +1,30 @@
-import {randomUUID} from 'node:crypto';import {z} from 'zod';import {assertMutationOrigin,requireStaff} from '../../../src/auth/guards';import {db} from '../../../src/persistence/db';import {redact} from '../../../src/persistence/conversations';
-export async function POST(request:Request){try{assertMutationOrigin(request);await requireStaff();const b=z.object({conversationId:z.string().max(100),name:z.string().min(1).max(100),phone:z.string().min(7).max(30),message:z.string().min(1).max(2000)}).strict().parse(await request.json());await db.query('INSERT INTO callbacks(id,conversation_id,name,phone,message) VALUES($1,$2,$3,$4,$5)',[randomUUID(),b.conversationId,b.name,b.phone,redact(b.message)]);return Response.json({saved:true});}catch{return Response.json({error:'Could not save callback.'},{status:400});}}
+import { randomUUID } from "node:crypto";
+import { z } from "zod";
+import { assertMutationOrigin, requireStaff } from "../../../src/auth/guards";
+import { db } from "../../../src/persistence/db";
+import { redact } from "../../../src/persistence/conversations";
+export async function POST(request: Request) {
+  try {
+    assertMutationOrigin(request);
+    await requireStaff();
+    const b = z
+      .object({
+        conversationId: z.string().max(100),
+        name: z.string().min(1).max(100),
+        phone: z.string().min(7).max(30),
+        message: z.string().min(1).max(2000),
+      })
+      .strict()
+      .parse(await request.json());
+    await db.query(
+      "INSERT INTO callbacks(id,conversation_id,name,phone,message) VALUES($1,$2,$3,$4,$5)",
+      [randomUUID(), b.conversationId, b.name, b.phone, redact(b.message)],
+    );
+    return Response.json({ saved: true });
+  } catch {
+    return Response.json(
+      { error: "Could not save callback." },
+      { status: 400 },
+    );
+  }
+}
