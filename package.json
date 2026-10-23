@@ -1,0 +1,38 @@
+{
+  "name": "ai-phone-receptionist",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "next dev --hostname 0.0.0.0",
+    "build": "next build",
+    "start": "next start --hostname 0.0.0.0",
+    "test": "node --env-file=.env --import tsx --test tests/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "db:migrate": "node scripts/migrate.mjs",
+    "test:integration": "tsx --test tests/*.integration.test.ts",
+    "test:browser": "playwright test",
+    "db:local": "node scripts/local-db.mjs"
+  },
+  "dependencies": {
+    "@prisma/client": "6.19.0",
+    "next": "15.5.12",
+    "pg": "8.16.3",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.1",
+    "@types/node": "22.19.0",
+    "@types/pg": "8.15.6",
+    "@types/react": "19.1.0",
+    "@types/react-dom": "19.1.0",
+    "embedded-postgres": "18.4.0-beta.17",
+    "prisma": "6.19.0",
+    "tsx": "4.20.6",
+    "typescript": "5.9.3"
+  }
+}

@@ -1,0 +1,56 @@
+generator client {
+ provider = "prisma-client-js"
+}
+datasource db {
+ provider = "postgresql"
+ url = env("DATABASE_URL")
+}
+model Conversation {
+ id String @id @default(cuid())
+ mode String
+ createdAt DateTime @default(now())
+ state Json @default("{}")
+ messages Message[]
+ outcomes Outcome[]
+}
+model Message {
+ id String @id @default(cuid())
+ conversationId String
+ conversation Conversation @relation(fields:[conversationId],references:[id],onDelete:Cascade)
+ role String
+ text String
+ createdAt DateTime @default(now())
+ @@index([createdAt])
+}
+model Outcome {
+ id String @id @default(cuid())
+ conversationId String
+ conversation Conversation @relation(fields:[conversationId],references:[id],onDelete:Cascade)
+ operationId String @unique
+ result Json
+ createdAt DateTime @default(now())
+}
+model Confirmation {
+ id String @id @default(cuid())
+ binding String
+ expiresAt DateTime
+ consumedAt DateTime?
+}
+model Setting {
+ key String @id
+ value Json
+}
+model Callback {
+ id String @id @default(cuid())
+ conversationId String
+ name String
+ phone String
+ message String
+ createdAt DateTime @default(now())
+}
+model Session {
+ id String @id
+ role String
+ staffGrant String?
+ expiresAt DateTime
+}
