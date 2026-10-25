@@ -39,7 +39,7 @@ test("staff authorization connects both apps and confirms a real local ticket ca
       },
     ]);
     await page.goto("/sign-in");
-    await page.getByRole("link", { name: "Connect repair account" }).click();
+    await page.getByRole("link", { name: "Connect admin account" }).click();
     await page.getByRole("button", { name: "Connect staff account" }).click();
     await expect(page).toHaveURL("http://localhost:3000/");
     await page.goto("/test");

@@ -132,7 +132,7 @@ export default function TestClient({ fixture = true }: { fixture?: boolean }) {
           <p className="section-intro">
             {fixture
               ? "Explore the experience before connecting real customer data. Every result here is a demonstration."
-              : "This workspace is connected to your repair service. Staff actions require your authenticated staff account."}
+              : "This workspace is connected to your repair service. Changes require your authenticated admin account."}
           </p>
           <label>
             Test as
@@ -146,8 +146,8 @@ export default function TestClient({ fixture = true }: { fixture?: boolean }) {
               <option value="customer">Customer · ticket reads only</option>
               <option value="staff">
                 {fixture
-                  ? "Demo staff · confirmed changes"
-                  : "Authenticated staff · confirmed changes"}
+                  ? "Demo admin · confirmed changes"
+                  : "Authenticated admin · confirmed changes"}
               </option>
             </select>
           </label>
@@ -178,8 +178,8 @@ export default function TestClient({ fixture = true }: { fixture?: boolean }) {
           </div>
           <p className="section-intro">
             {fixture
-              ? "Try “cancel ticket” in demo staff mode to preview confirmation."
-              : "Authenticated staff can request a confirmed cancellation."}
+              ? "Try “cancel ticket” in demo admin mode to preview confirmation."
+              : "Authenticated administrators can request a confirmed cancellation."}
             Other status transitions keep your repair app’s intake and checkout
             requirements.
           </p>

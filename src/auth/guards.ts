@@ -2,12 +2,14 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { hash } from "./exchange";
 import { db } from "../persistence/db";
+import { validateDemoSession } from "./demo";
 export function assertLocalFixture(
   origin: string,
   mode = process.env.RECEPTIONIST_MODE ?? "fixture",
 ) {
   const u = new URL(origin);
   if (
+    process.env.VERCEL ||
     mode !== "fixture" ||
     !["localhost", "127.0.0.1", "[::1]"].includes(u.hostname) ||
     u.protocol !== "http:"
@@ -25,6 +27,17 @@ export function assertMutationOrigin(request: Request) {
 }
 export async function requireStaff() {
   if ((process.env.RECEPTIONIST_MODE ?? "fixture") === "fixture") {
+    const token = (await cookies()).get("receptionist_session")?.value;
+    if (
+      process.env.DEMO_ADMIN_PASSWORD ||
+      process.env.VERCEL ||
+      !["localhost", "127.0.0.1", "[::1]"].includes(
+        new URL(process.env.APP_ORIGIN ?? "http://localhost:3000").hostname,
+      )
+    ) {
+      if (!token || !(await validateDemoSession(token))) redirect("/sign-in");
+      return { id: token, role: "admin" as const, grant: "fixture-staff" };
+    }
     assertLocalFixture(process.env.APP_ORIGIN ?? "http://localhost:3000");
     return {
       id: "fixture-local",
@@ -55,8 +68,7 @@ export async function requireStaff() {
     },
   );
   const current = await check.json();
-  if (!current.ok || !["admin", "staff"].includes(current.value?.role))
-    redirect("/sign-in");
+  if (!current.ok || current.value?.role !== "admin") redirect("/sign-in");
   rows[0].role = current.value.role;
   return {
     id: token,

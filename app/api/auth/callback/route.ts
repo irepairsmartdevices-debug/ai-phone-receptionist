@@ -14,7 +14,10 @@ export async function GET(request: NextRequest) {
       throw Error();
     const code = request.nextUrl.searchParams.get("code");
     if (!code) throw Error();
+    if ((process.env.RECEPTIONIST_MODE ?? "fixture") !== "connected")
+      throw Error();
     const actor = await exchange(code, pending.verifier);
+    if (actor.role !== "admin") throw Error();
     const token = randomBytes(32).toString("hex");
     await db.query(
       "INSERT INTO sessions(id,role,staff_grant,expires_at) VALUES($1,$2,$3,$4)",

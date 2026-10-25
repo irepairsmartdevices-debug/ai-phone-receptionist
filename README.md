@@ -85,3 +85,23 @@ Before calling the phone feature ready, separately verify a real inbound call, d
 ## Retention worker
 
 Run `npm run retention` alongside the server. It removes expired transcript text, abandoned conversation state, voice response caches and callback data hourly while retaining minimal operation audit metadata. `npm run retention -- --once` runs one cleanup pass. Register this worker or an equivalent scheduled job in the deployed environment; a web server process alone does not schedule cleanup.
+
+## Admin-only hosted demo (Vercel)
+
+The hosted demo uses fictional repair data and has one administrator login, without staff accounts.
+In Vercel → Environment Variables, set these for **Production**:
+
+| Variable | Value |
+| --- | --- |
+| `DATABASE_URL` | Your existing Neon connection string (keep private) |
+| `RECEPTIONIST_MODE` | `fixture` |
+| `APP_ORIGIN` | `https://ai-phone-receptionist-five.vercel.app` (or your canonical HTTPS domain) |
+| `DEMO_ADMIN_PASSWORD` | A unique private password of at least 16 characters |
+
+Redeploy after changing environment variables. Open the canonical site address, sign in as admin,
+then use Test receptionist. Preview/deployment-specific URLs are not the configured mutation origin.
+Do not share the password in chat or commit it. Sessions expire after eight hours; Sign out revokes
+the session immediately. Changing the password revokes earlier demo sessions after redeployment.
+The login has a shared database limit of 30 attempts per 15 minutes; wait if limited.
+No additional tables are needed beyond migrations 001 and 002. Demo access never authorizes the
+connected repair service or live calls. Connected mode requires a repair administrator account.

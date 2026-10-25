@@ -29,3 +29,13 @@ test("mutations reject cross-origin requests and forged localhost host", () => {
     ),
   );
 });
+test("Vercel never grants anonymous local fixture access", () => {
+  const previous = process.env.VERCEL;
+  process.env.VERCEL = "1";
+  try {
+    assert.throws(() => assertLocalFixture("http://localhost:3000"));
+  } finally {
+    if (previous === undefined) delete process.env.VERCEL;
+    else process.env.VERCEL = previous;
+  }
+});

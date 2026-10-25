@@ -39,7 +39,7 @@ export default async function Settings() {
         <section className="panel">
           <div className="section-heading">
             <h2>Connections & readiness</h2>
-            <span>LOCAL DEVELOPMENT</span>
+            <span>{fixture ? "DEMO WORKSPACE" : "CONNECTED WORKSPACE"}</span>
           </div>
           {[
             [

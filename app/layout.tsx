@@ -52,7 +52,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               <span className="avatar">RS</span>
               <div>
                 <strong>Repair Studio</strong>
-                <small>Owner workspace</small>
+                <small>Admin workspace</small>
               </div>
             </div>
           </div>
@@ -63,8 +63,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               Workspace <span>/</span> Receptionist
             </div>
             <div className="header-right">
-              <span className="dot amber" /> Local development{" "}
+              <span className="dot amber" />{" "}
+              {(process.env.RECEPTIONIST_MODE ?? "fixture") === "fixture"
+                ? "Demo workspace"
+                : "Connected workspace"}{" "}
               <span className="avatar small">RS</span>
+              <form action="/api/auth/logout" method="post">
+                <button type="submit">Sign out</button>
+              </form>
             </div>
           </header>
           <div className="content">{children}</div>

@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { authorizationRequest } from "../../../../src/auth/exchange";
 export async function GET() {
   try {
+    if ((process.env.RECEPTIONIST_MODE ?? "fixture") !== "connected")
+      throw Error();
     const { url, state, verifier } = authorizationRequest();
     const r = NextResponse.redirect(url);
     r.cookies.set("staff_auth_pending", JSON.stringify({ state, verifier }), {
