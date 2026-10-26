@@ -509,12 +509,8 @@ export async function runAssistantTurn(
     const question =
       safeQuestion(plan?.question ?? null, field, memory) ??
       fallbackQuestion(field);
-    const ack =
-      plan?.ack === "sympathy"
-        ? "Sorry that happened. "
-        : plan?.ack === "thanks"
-          ? "Thanks. "
-          : "";
+    // A sympathy plan must not turn routine intake replies into stock apologies.
+    const ack = plan?.ack === "thanks" ? "Thanks. " : "";
     return finish(ack + question, { step: "start" });
   }
   memory.asked = undefined;

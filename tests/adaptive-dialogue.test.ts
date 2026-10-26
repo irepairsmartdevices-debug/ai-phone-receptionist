@@ -38,6 +38,25 @@ const plan = (more: Partial<DialoguePlan>): DialoguePlan => ({
   ack: "none",
   ...more,
 });
+test("repair intake omits stock apologies even when the planner requests sympathy on every turn", async () => {
+  const o = options();
+  o.planner = async () => plan({ ack: "sympathy" });
+  let state: AssistantState = { step: "start" };
+  for (const [text, expectedQuestion] of [
+    ["My device is wet", /what.*device/i],
+    ["iPhone", /exact model/i],
+    ["iPhone 14", /problems.*noticed/i],
+    ["The screen is black", /book a repair visit/i],
+  ] as const) {
+    const result = await ask(o, state, text);
+    assert.doesNotMatch(result.text, /sorry that happened/i);
+    assert.match(result.text, expectedQuestion);
+    // The same conversation can resume from persisted state between replies.
+    state = JSON.parse(JSON.stringify(result.state));
+  }
+  assert.equal(state.assistant?.model, "iPhone 14");
+  assert.equal(state.assistant?.offeredBooking, true);
+});
 test("wet-device reports collect device/model/details and only a contextual yes starts booking", async () => {
   const o = options();
   let r = await ask(o, { step: "start" }, "My device is wet");
