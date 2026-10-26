@@ -60,3 +60,12 @@ Review regressions: changing an earlier screen request to unsupported camera rep
 screen price; repair names on another model cannot cause a clarification loop. Both failed before the fix
 and passed afterward. Source price changes after booking review remain an existing source contract
 limitation; all prices are estimates, not a price lock.
+
+## Automatic source catalog freshness
+
+Verified end-to-end against the dedicated local repair integration database and running HTTP endpoint:
+source estimate $111.00 changed to $143.75 and the same engine returned the new amount; a new model
+with a $207.00 repair offering became quotable without restart; removing its offering stopped that quote.
+The test only creates and cleans up its own local catalog rows. An unpriced model is intentionally absent.
+Fetch and endpoint no-store policy were independently reviewed. Explicit manual overrides retain precedence;
+already-open admin catalog lists need a reload, while pricing turns fetch current data independently.

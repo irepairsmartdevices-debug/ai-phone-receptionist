@@ -132,3 +132,15 @@ still requires deploying the separate repair integration. Its retained commit is
 `2b396fd9e1e30bdccbd17a0a860cfc4cb6cef8e2`; the updated portable patch is in
 `docs/integration/repair-api.patch`. Older source APIs are accepted, with conservative clarification
 when category/brand metadata is missing.
+
+### Automatic repair-catalog updates
+
+In connected mode, each pricing question and follow-up reads the current repair-app catalog with
+caching disabled at both ends. Saving a source price change or adding a model with an assigned repair
+and price is reflected on the next question; no receptionist redeployment or manual reimport is needed.
+A model without a configured repair price cannot be quoted. An explicit linked manual override stays
+in effect until removed. The administrator catalog list refreshes on page reload/navigation; an already
+open list does not poll, while conversation turns still read current data.
+
+Regression `tests/catalog-freshness.integration.test.ts` verifies a source price change, a new model
+and offering, and removal using the same HTTP client and conversation engine without restarting.
