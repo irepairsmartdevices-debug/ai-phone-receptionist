@@ -9,12 +9,13 @@ export async function matchCustomAnswer(
 ): Promise<string | null> {
   if (!key || !answers.length) return null;
   // Bound the provider request independently from the admin storage limits.
-  const candidates: { id: string; question: string; variations: string[] }[] =
+  const candidates: { id: string; topic?: string; question: string; variations: string[] }[] =
     [];
   let budget = 40000;
   for (const a of answers) {
     const candidate = {
       id: a.id,
+      ...(a.topic ? { topic: a.topic.slice(0, 120) } : {}),
       question: a.question.slice(0, 400),
       variations: a.variations.slice(0, 5).map((v) => v.slice(0, 200)),
     };

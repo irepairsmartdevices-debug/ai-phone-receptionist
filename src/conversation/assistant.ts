@@ -304,6 +304,50 @@ export async function runAssistantTurn(
   };
   if (/^(restart|start over)$/i.test(value))
     return engine.turn(state, value, actor, conversationId);
+  const topicReply = (answer: string) => {
+    // A new topic answers the caller's question instead of continuing an older
+    // public store-choice prompt. Keep device and protected workflow context.
+    memory.choosingStore = false;
+    return finish(answer);
+  };
+  // Named topics are owner-written replies, including custom location wording.
+  // Match them before built-in directions, but never consume a protected field,
+  // a pricing question, personal repair intake, or acceptance of a booking offer.
+  if (
+    (!state.step || state.step === "start") &&
+    !guarded(value) &&
+    !isPriceQuestion(value) &&
+    !report(value) &&
+    !(memory.offeredBooking && (yes(value) || no(value)))
+  ) {
+    const saved = matchSavedAnswer(value, options.knowledge.answers);
+    if (saved.ambiguous)
+      return topicReply(
+        "I found more than one saved answer that could fit. Could you clarify your question?",
+      );
+    if (saved.answer?.topic) return topicReply(saved.answer.answer);
+    // Explicit location requests otherwise bypass FAQ matching. Give the AI a
+    // chance to select an approved named topic, never to write its own address.
+    if (
+      !saved.answer &&
+      directionRequest(value) &&
+      options.answerMatcher &&
+      options.knowledge.answers.some((a) => a.topic)
+    ) {
+      try {
+        const id = await options.answerMatcher(
+          redact(value),
+          options.knowledge.answers,
+        );
+        const selected = options.knowledge.answers.find(
+          (a) => a.id === id && a.topic,
+        );
+        if (selected) return topicReply(selected.answer);
+      } catch {
+        /* Current saved directions remain available when AI matching fails. */
+      }
+    }
+  }
   // Directions are public and may interrupt intake without consuming a booking
   // confirmation or changing a verification step.
   if (memory.choosingStore && guarded(value) && !directionRequest(value))

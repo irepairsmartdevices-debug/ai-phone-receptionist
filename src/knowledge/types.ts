@@ -1,5 +1,6 @@
 export type CustomAnswer = {
   id: string;
+  topic?: string;
   question: string;
   variations: string[];
   answer: string;

@@ -13,6 +13,13 @@
   max-width: 620px;
   line-height: 1.6;
 }
+.example {
+  margin: 20px 0;
+}
+.example p {
+  margin: 8px 0 0;
+  line-height: 1.6;
+}
 .list {
   margin-top: 24px;
   display: grid;
@@ -28,6 +35,18 @@
 .item h3 {
   margin: 0;
   font-size: 15px;
+  line-height: 1.5;
+}
+.topic {
+  display: inline-block;
+  max-width: 100%;
+  margin-bottom: 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: #edf2e7;
+  color: #445938;
+  font-size: 12px;
+  font-weight: 600;
   line-height: 1.5;
 }
 .item p {

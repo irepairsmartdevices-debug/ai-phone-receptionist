@@ -57,6 +57,140 @@ test("custom answers persist, edit one row and delete without overwriting other 
   }
 });
 
+test("named custom topics persist trimmed labels, edit and delete", async () => {
+  let id: string | undefined;
+  try {
+    const created = await createKnowledge("answer", {
+      topic: "  Store Location  ",
+      question: "Where is your shop?",
+      variations: ["How can I find you?", "What is your address?"],
+      answer: "  Find us at 12 Test Street.  ",
+    });
+    id = created.id;
+    assert.deepEqual(
+      (await getKnowledge()).answers.find((entry) => entry.id === id),
+      {
+        id,
+        topic: "Store Location",
+        question: "Where is your shop?",
+        variations: ["How can I find you?", "What is your address?"],
+        answer: "Find us at 12 Test Street.",
+      },
+    );
+    await updateKnowledge("answer", id, {
+      topic: "  Visiting the shop  ",
+      question: "Can I visit?",
+      variations: ["Can I drop in?"],
+      answer: "  Please call ahead.  ",
+    });
+    assert.deepEqual(
+      (await getKnowledge()).answers.find((entry) => entry.id === id),
+      {
+        id,
+        topic: "Visiting the shop",
+        question: "Can I visit?",
+        variations: ["Can I drop in?"],
+        answer: "Please call ahead.",
+      },
+    );
+    await deleteKnowledge("answer", id);
+    assert.equal(
+      (await getKnowledge()).answers.some((entry) => entry.id === id),
+      false,
+    );
+  } finally {
+    if (id) await deleteKnowledge("answer", id);
+  }
+});
+
+test("answer writes reject empty responses and invalid topic metadata", async () => {
+  const ids: string[] = [];
+  const valid = {
+    question: "Can I visit?",
+    variations: [],
+    answer: "Please call ahead.",
+  };
+  const invalid = [
+    { ...valid, answer: "" },
+    { ...valid, answer: "  " },
+    { ...valid, responseType: "store_directions" },
+    { ...valid, topic: "  " },
+    { ...valid, topic: "x".repeat(121) },
+    { ...valid, answer: undefined },
+    { ...valid, answer: "x".repeat(4001) },
+    { ...valid, variations: Array.from({ length: 16 }, (_, i) => `Phrase ${i}`) },
+  ];
+  try {
+    const created = await createKnowledge("answer", {
+      ...valid,
+      topic: "x".repeat(120),
+    });
+    ids.push(created.id);
+    assert.equal(
+      (await getKnowledge()).answers.find((entry) => entry.id === created.id)
+        ?.topic,
+      "x".repeat(120),
+    );
+    for (const input of invalid) {
+      await assert.rejects(async () => {
+        const unexpected = await createKnowledge("answer", input);
+        ids.push(unexpected.id);
+      });
+      await assert.rejects(() => updateKnowledge("answer", created.id, input));
+    }
+    assert.equal(
+      (await getKnowledge()).answers.find((entry) => entry.id === created.id)
+        ?.answer,
+      "Please call ahead.",
+    );
+  } finally {
+    for (const id of ids) await deleteKnowledge("answer", id);
+  }
+});
+
+test("stored answers retain legacy shape and validate topic metadata and answer content", async () => {
+  const legacy = {
+    id: randomUUID(),
+    question: "Do you repair tablets?",
+    variations: ["Can you fix an iPad?"],
+    answer: "Bring it in for inspection.",
+  };
+  const topic = {
+    id: randomUUID(),
+    topic: "Store Location",
+    question: "Where are you?",
+    variations: [],
+    answer: "Find us at 12 Test Street.",
+  };
+  const invalid = [
+    { ...legacy, id: randomUUID(), answer: "" },
+    { ...legacy, id: randomUUID(), answer: "  " },
+    { ...legacy, id: randomUUID(), responseType: "store_directions" },
+    { ...legacy, id: randomUUID(), topic: "  " },
+    { ...legacy, id: randomUUID(), topic: "x".repeat(121) },
+  ];
+  const records = [legacy, topic, ...invalid];
+  try {
+    for (const record of records) {
+      await db.query("INSERT INTO settings(key,value) VALUES($1,$2)", [
+        `knowledge:answer:${record.id}`,
+        JSON.stringify(record),
+      ]);
+    }
+    const { answers } = await getKnowledge();
+    assert.deepEqual(answers.find((entry) => entry.id === legacy.id), legacy);
+    assert.deepEqual(
+      answers.find((entry) => entry.id === topic.id),
+      topic,
+    );
+    for (const record of invalid) {
+      assert.equal(answers.some((entry) => entry.id === record.id), false);
+    }
+  } finally {
+    for (const record of records) await deleteKnowledge("answer", record.id);
+  }
+});
+
 test("manual prices validate cents and reject duplicate device identity and duplicate source overrides", async () => {
   const ids: { kind: "answer" | "price"; id: string }[] = [];
   const model = `Test ${randomUUID()}`;

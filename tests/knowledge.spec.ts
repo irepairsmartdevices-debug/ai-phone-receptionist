@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 
 const origin = "http://localhost:3000";
 const password = "test-admin-password-for-demo-only";
+const triggerLabel = "Trigger phrases (one per line, up to 15)";
 
 test("knowledge endpoints reject anonymous reads and writes", async ({
   request,
@@ -69,7 +70,7 @@ async function save(
 }
 
 for (const width of [1440, 390]) {
-  test(`admin manages answers and model prices used immediately by the receptionist (${width}px)`, async ({
+  test(`admin manages named topics and model prices used immediately by the receptionist (${width}px)`, async ({
     page,
   }) => {
     test.setTimeout(90_000);
@@ -77,6 +78,9 @@ for (const width of [1440, 390]) {
     const suffix = randomUUID().slice(0, 8);
     const question = `Do you inspect liquid damage for browser ${suffix}?`;
     const variant = `Can you inspect liquid damage for browser ${suffix}?`;
+    const secondVariant = `Could you assess liquid damage for browser ${suffix}?`;
+    const topic = `Liquid inspection ${suffix}`;
+    const updatedTopic = `Water damage ${suffix}`;
     const answer = `Bring browser ${suffix} in for an inspection.`;
     const updatedAnswer = `We will inspect browser ${suffix} before quoting.`;
     const category = `Phone browser ${suffix}`;
@@ -95,9 +99,13 @@ for (const width of [1440, 390]) {
         },
       });
       expect(forged.status()).toBe(403);
+      await expect(page.getByLabel("Topic name (optional)")).toBeVisible();
+      await page.getByLabel("Topic name (optional)").fill(topic);
       await page.getByLabel("Question", { exact: true }).fill(question);
-      await page.getByLabel("Alternate phrasings (one per line)").fill(variant);
-      await page.getByLabel("Approved answer").fill(answer);
+      await page.getByLabel(triggerLabel).fill(`${variant}\n${secondVariant}`);
+      await page
+        .getByRole("textbox", { name: "Approved answer", exact: true })
+        .fill(answer);
       const created = await save(page, "Add answer", "POST");
       answerId = created.answers.find(
         (row: { question: string }) => row.question === question,
@@ -107,6 +115,10 @@ for (const width of [1440, 390]) {
       await expect(
         page.getByRole("heading", { name: question, exact: true }),
       ).toBeVisible();
+      const card = page.locator("article").filter({ hasText: question });
+      await expect(card.getByText(`[${topic}]`, { exact: true })).toBeVisible();
+      await expect(card).toContainText(variant);
+      await expect(card).toContainText(secondVariant);
       expect(
         await page.evaluate(
           () => document.documentElement.scrollWidth <= innerWidth,
@@ -115,12 +127,24 @@ for (const width of [1440, 390]) {
       await page.goto("/test");
       await send(page, "restart");
       expect(await send(page, variant)).toBe(answer);
+      expect(await send(page, secondVariant)).toBe(answer);
       await page.goto("/knowledge");
       await page
         .getByRole("button", { name: `Edit answer: ${question}`, exact: true })
         .click();
-      await page.getByLabel("Approved answer").fill(updatedAnswer);
+      await expect(page.getByLabel("Topic name (optional)")).toHaveValue(topic);
+      await expect(page.getByLabel(triggerLabel)).toHaveValue(
+        `${variant}\n${secondVariant}`,
+      );
+      await page.getByLabel("Topic name (optional)").fill(updatedTopic);
+      await page
+        .getByRole("textbox", { name: "Approved answer", exact: true })
+        .fill(updatedAnswer);
       await save(page, "Save answer changes", "PUT");
+      await page.reload();
+      await expect(
+        page.getByText(`[${updatedTopic}]`, { exact: true }),
+      ).toBeVisible();
       await page.goto("/test");
       expect(await send(page, variant)).toBe(updatedAnswer);
       await page.goto("/knowledge");
@@ -205,6 +229,136 @@ for (const width of [1440, 390]) {
         await page.request.delete("/api/knowledge", {
           headers: { origin },
           data: { kind: "price", id: priceId },
+        });
+    }
+  });
+
+  test(`Store Location example uses the owner's approved answer for every trigger (${width}px)`, async ({
+    page,
+  }) => {
+    test.setTimeout(90_000);
+    await page.setViewportSize({ width, height: 900 });
+    const suffix = randomUUID().slice(0, 8);
+    const question = `Where is your store located for browser ${suffix}?`;
+    const answer = `For browser ${suffix}, find us across from RedBird Mall by Hair Depot.`;
+    const updatedAnswer = `For browser ${suffix}, meet us beside the mall entrance.`;
+    let answerId: string | undefined;
+    await signIn(page);
+    try {
+      const before = await page.request.get("/api/knowledge");
+      expect(before.status()).toBe(200);
+      const beforeSnapshot = await before.json();
+      await page
+        .getByRole("textbox", { name: "Approved answer", exact: true })
+        .fill("Unrelated unsaved draft answer");
+      await expect(
+        page.getByRole("button", {
+          name: "Use Store Location example",
+          exact: true,
+        }),
+      ).toBeVisible();
+      await page
+        .getByRole("button", {
+          name: "Use Store Location example",
+          exact: true,
+        })
+        .click();
+      await expect(page.getByLabel("Topic name (optional)")).toHaveValue(
+        "Store Location",
+      );
+      await expect(page.getByLabel("Question", { exact: true })).toHaveValue(
+        "Where is your store located?",
+      );
+      const exampleTriggers = (await page.getByLabel(triggerLabel).inputValue())
+        .split("\n")
+        .filter(Boolean);
+      expect(exampleTriggers.length).toBeGreaterThanOrEqual(3);
+      const triggers = exampleTriggers.map(
+        (trigger) => `${trigger} (browser ${suffix})`,
+      );
+      await expect(
+        page.getByRole("textbox", { name: "Approved answer", exact: true }),
+      ).toHaveValue("");
+      await expect(
+        page.getByRole("textbox", { name: "Approved answer", exact: true }),
+      ).toHaveAttribute("required", "");
+      const afterExample = await page.request.get("/api/knowledge");
+      expect((await afterExample.json()).answers).toEqual(
+        beforeSnapshot.answers,
+      );
+
+      await page.getByLabel("Question", { exact: true }).fill(question);
+      await page.getByLabel(triggerLabel).fill(triggers.join("\n"));
+      await page
+        .getByRole("textbox", { name: "Approved answer", exact: true })
+        .fill(answer);
+      const created = await save(page, "Add answer", "POST");
+      const row = created.answers.find(
+        (entry: { answer: string }) => entry.answer === answer,
+      );
+      answerId = row?.id;
+      expect(answerId).toBeTruthy();
+      expect(row).toMatchObject({
+        topic: "Store Location",
+        answer,
+        variations: triggers,
+      });
+      await page.reload();
+      const card = page.locator("article").filter({ hasText: question });
+      await expect(
+        card.getByText("[Store Location]", { exact: true }),
+      ).toBeVisible();
+      await expect(card.getByRole("heading", { name: question })).toBeVisible();
+      await expect(card).toContainText(answer);
+      await expect(card).toContainText(triggers[0]);
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= innerWidth,
+        ),
+      ).toBe(true);
+
+      await page.goto("/test");
+      await send(page, "restart");
+      expect(await send(page, question)).toBe(answer);
+      for (const trigger of triggers)
+        expect(await send(page, trigger)).toBe(answer);
+
+      await page.goto("/knowledge");
+      await page
+        .getByRole("button", { name: `Edit answer: ${question}`, exact: true })
+        .click();
+      await expect(
+        page.getByRole("textbox", { name: "Approved answer", exact: true }),
+      ).toHaveValue(answer);
+      await page
+        .getByLabel("Topic name (optional)")
+        .fill(`Store Location ${suffix}`);
+      await page
+        .getByRole("textbox", { name: "Approved answer", exact: true })
+        .fill(updatedAnswer);
+      await save(page, "Save answer changes", "PUT");
+      await page.reload();
+      await expect(
+        page.getByText(`[Store Location ${suffix}]`, { exact: true }),
+      ).toBeVisible();
+      await page.goto("/test");
+      expect(await send(page, triggers[0])).toBe(updatedAnswer);
+      await page.goto("/knowledge");
+      page.once("dialog", (dialog) => dialog.accept());
+      await save(page, `Delete answer: ${question}`, "DELETE");
+      await expect(
+        page.getByRole("heading", { name: question, exact: true }),
+      ).toHaveCount(0);
+      await page.goto("/test");
+      await send(page, "restart");
+      const deletedReply = await send(page, triggers[0]);
+      expect(deletedReply).not.toBe(answer);
+      expect(deletedReply).not.toBe(updatedAnswer);
+    } finally {
+      if (answerId)
+        await page.request.delete("/api/knowledge", {
+          headers: { origin },
+          data: { kind: "answer", id: answerId },
         });
     }
   });

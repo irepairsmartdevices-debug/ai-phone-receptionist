@@ -8,6 +8,7 @@ export class KnowledgeError extends Error {}
 const title = z.string().trim().min(1).max(120);
 export const AnswerInputSchema = z
   .object({
+    topic: title.optional(),
     question: z.string().trim().min(1).max(500),
     variations: z.array(z.string().trim().min(1).max(500)).max(15),
     answer: z.string().trim().min(1).max(4000),

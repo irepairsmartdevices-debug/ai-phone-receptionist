@@ -38,6 +38,7 @@ export function createDialoguePlanner(
     try {
       const answers = input.answers.slice(0, 100).map((a) => ({
         id: a.id,
+        ...(a.topic ? { topic: a.topic.slice(0, 120) } : {}),
         question: a.question.slice(0, 500),
         answer: a.answer.slice(0, 1500),
         variations: a.variations.slice(0, 5),

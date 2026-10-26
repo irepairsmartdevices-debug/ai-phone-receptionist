@@ -106,3 +106,25 @@ must be checked in the deployed app. No source repair-app changes were needed fo
 Final verification: Node suite94/94; production browser suites10/10 (adaptive4, knowledge4, admin demo2),
 TypeScript and production build passed. No user street address was supplied while building; default Dallas
 notes contain only the supplied landmarks, and the admin form is ready for the full address.
+
+
+## Named call topics and multiple trigger phrases
+
+The owner chose custom written replies for topics such as Store Location. Topic names
+are optional bounded metadata on existing saved-answer records; original records load
+unchanged and every answer remains required. The admin example fills questions and
+phrases but leaves the answer blank, with an explicit save required. No migration or
+production knowledge edits were made.
+
+Regressions verify multiple triggers, custom location text ahead of built-in directions,
+next-turn edits/deletion, conflicts, preserved repair context, guarded codes/pricing and
+booking offers, and provider-selected known IDs. A signed webhook test exercises multiple
+phrases, editing and deletion across phone-call turns. The fresh reviewer identified a
+stale public store-choice flag after topic replies; its regression failed before the fix
+and passed for both literal and semantic matching. Browser checks exposed unstable
+textarea accessible names after editing; explicit labels now keep those fields addressable.
+
+Real deployed OpenAI requests and live Twilio calls remain unverified from this environment.
+
+Final verification: Node suite107/107; production browser suites10/10 (knowledge6,
+adaptive4); TypeScript, production build and diff checks passed.

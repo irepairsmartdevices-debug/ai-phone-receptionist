@@ -14,7 +14,18 @@ type SourceOffering = Business["offerings"][number] & {
   brand?: string;
   model?: string;
 };
-const emptyAnswer = { question: "", variations: "", answer: "" };
+const emptyAnswer = { topic: "", question: "", variations: "", answer: "" };
+const storeLocationExample = {
+  topic: "Store Location",
+  question: "Where is your store located?",
+  variations: [
+    "Where are you located?",
+    "What is your store address?",
+    "How do I get to your shop?",
+    "Can you tell me your location?",
+  ].join("\n"),
+  answer: "",
+};
 const emptyPrice = {
   category: "Phone",
   brand: "",
@@ -86,6 +97,7 @@ export default function KnowledgeClient({
       await save(answerEditing ? "PUT" : "POST", {
         kind: "answer",
         ...(answerEditing ? { id: answerEditing } : {}),
+        ...(answer.topic.trim() ? { topic: answer.topic.trim() } : {}),
         question: answer.question,
         variations: answer.variations
           .split("\n")
@@ -146,6 +158,7 @@ export default function KnowledgeClient({
   function editAnswer(row: CustomAnswer) {
     setAnswerEditing(row.id);
     setAnswer({
+      topic: row.topic ?? "",
       question: row.question,
       variations: row.variations.join("\n"),
       answer: row.answer,
@@ -201,19 +214,50 @@ export default function KnowledgeClient({
       )}
       <section className="panel" aria-labelledby="answers-heading">
         <div className="section-heading">
-          <h2 id="answers-heading">Custom questions & answers</h2>
+          <h2 id="answers-heading">Call topics & approved answers</h2>
           <span>ADMIN ONLY</span>
         </div>
         <p className="section-intro">
-          Write the question and the answer you want customers to hear. Add
-          other ways a customer might ask it, one per line.
+          Give a topic an optional name, then write the question and approved
+          answer you want customers to hear. Add several trigger phrases for
+          other ways a caller might ask the same question.
         </p>
         <p className={styles.note}>
           {semanticAvailable
             ? "AI matching is configured to recognize similar questions using your saved answers."
-            : "Saved questions and alternate phrasings work now. Connect your AI provider to recognize more ways of asking the same question."}
+            : "Saved questions and trigger phrases work now. Connect your AI provider to recognize more ways of asking the same question."}
         </p>
+        <div className={styles.example}>
+          <button
+            type="button"
+            className="button"
+            disabled={busy}
+            onClick={() => {
+              setAnswer(storeLocationExample);
+              setAnswerEditing(undefined);
+              setError("");
+              setStatus("");
+              document.getElementById("approved-answer")?.focus();
+            }}
+          >
+            Use Store Location example
+          </button>
+          <p className="muted">
+            Fills the topic and trigger phrases. Write your own approved answer,
+            then save it below.
+          </p>
+        </div>
         <form onSubmit={submitAnswer} className="form-grid">
+          <label className="wide">
+            Topic name (optional)
+            <input
+              name="topic"
+              value={answer.topic}
+              onChange={(e) => setAnswer({ ...answer, topic: e.target.value })}
+              maxLength={120}
+              placeholder="Store Location"
+            />
+          </label>
           <label className="wide">
             Question
             <input
@@ -229,9 +273,10 @@ export default function KnowledgeClient({
             />
           </label>
           <label className="wide">
-            Alternate phrasings (one per line)
+            Trigger phrases (one per line, up to 15)
             <textarea
               name="variations"
+              aria-label="Trigger phrases (one per line, up to 15)"
               value={answer.variations}
               onChange={(e) =>
                 setAnswer({ ...answer, variations: e.target.value })
@@ -243,7 +288,9 @@ export default function KnowledgeClient({
           <label className="wide">
             Approved answer
             <textarea
+              id="approved-answer"
               name="answer"
+              aria-label="Approved answer"
               value={answer.answer}
               onChange={(e) => setAnswer({ ...answer, answer: e.target.value })}
               required
@@ -277,11 +324,14 @@ export default function KnowledgeClient({
           ) : (
             knowledge.answers.map((row) => (
               <article key={row.id} className={styles.item}>
+                {row.topic && (
+                  <span className={styles.topic}>[{row.topic}]</span>
+                )}
                 <h3>{row.question}</h3>
                 <p className={styles.answer}>{row.answer}</p>
                 {row.variations.length > 0 && (
                   <p className="muted">
-                    Also asked as: {row.variations.join(" · ")}
+                    Trigger phrases: {row.variations.join(" · ")}
                   </p>
                 )}
                 <div className={styles.actions}>

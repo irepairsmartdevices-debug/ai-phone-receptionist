@@ -166,3 +166,21 @@ The receptionist asks which store when needed, remembers the selection, and supp
 plus a Google Maps directions link when an address is known. It does not invent travel times or routes.
 The address can interrupt a repair conversation without losing the device context or ticket verification.
 No extra migration or new secret name is required.
+
+
+## Named topics and caller trigger phrases
+
+In **Knowledge & pricing → Call topics & approved answers**, enter an optional topic
+name such as **Store Location**, a main question, up to 15 additional trigger phrases
+(one per line), and the custom approved answer you want spoken. **Use Store Location
+example** fills the name and example phrases, leaving the answer blank for you to
+write. Click **Add answer** to save; editing and deleting use the existing controls.
+The same saved knowledge is read on each chat or configured phone-call turn.
+
+At the normal conversation step, a matching named location topic uses your written
+answer before built-in directions. Keep addresses and landmarks in that custom text
+up to date yourself. Unmatched directions requests continue to use Settings/source
+locations. Ticket codes, pricing clarification, booking confirmation and personal
+repair intake retain their existing workflows. A topic label is an admin label,
+not a template variable; the receptionist uses the saved question and trigger phrases.
+Existing unnamed questions remain available without a database migration.
