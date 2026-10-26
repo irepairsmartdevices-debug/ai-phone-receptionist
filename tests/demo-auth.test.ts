@@ -6,7 +6,7 @@ import * as demo from "../src/auth/demo";
 
 test("demo authentication rejects bad credentials, expires, rotates and signs out", async () => {
   const before = { ...process.env };
-  const password = "test-admin-password-for-demo-only";
+  const password = "012345";
   process.env.DEMO_ADMIN_PASSWORD = password;
   process.env.RECEPTIONIST_MODE = "fixture";
   process.env.APP_ORIGIN = "https://demo.example";
@@ -70,6 +70,32 @@ test("demo login throttle persists across requests and rejects even correct pass
     );
   } finally {
     await db.query("DELETE FROM settings WHERE key='demo-login-attempts'");
+    process.env = before;
+  }
+});
+
+test("admin demo accepts exactly six ASCII digits including a leading zero", () => {
+  const before = { ...process.env };
+  process.env.RECEPTIONIST_MODE = "fixture";
+  process.env.APP_ORIGIN = "https://demo.example";
+  try {
+    for (const pin of ["012345", "654321"]) {
+      process.env.DEMO_ADMIN_PASSWORD = pin;
+      assert.equal(demo.demoConfigured(), true);
+    }
+    for (const invalid of [
+      "12345",
+      "1234567",
+      "abcdef",
+      "12345 ",
+      "１２３４５６",
+    ]) {
+      process.env.DEMO_ADMIN_PASSWORD = invalid;
+      assert.equal(demo.demoConfigured(), false);
+    }
+    process.env.DEMO_ADMIN_PASSWORD = "a-long-existing-admin-password";
+    assert.equal(demo.demoConfigured(), true);
+  } finally {
     process.env = before;
   }
 });

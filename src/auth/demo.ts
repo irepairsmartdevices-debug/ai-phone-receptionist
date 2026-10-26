@@ -6,7 +6,8 @@ export const DEMO_SESSION_SECONDS = 8 * 60 * 60;
 export function demoConfigured() {
   if ((process.env.RECEPTIONIST_MODE ?? "fixture") !== "fixture") return false;
   const password = process.env.DEMO_ADMIN_PASSWORD;
-  if (!password || password.length < 16) return false;
+  if (!password || (!/^[0-9]{6}$/.test(password) && password.length < 16))
+    return false;
   try {
     const url = new URL(process.env.APP_ORIGIN ?? "");
     return (

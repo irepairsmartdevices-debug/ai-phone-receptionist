@@ -96,7 +96,7 @@ In Vercel → Environment Variables, set these for **Production**:
 | `DATABASE_URL` | Your existing Neon connection string (keep private) |
 | `RECEPTIONIST_MODE` | `fixture` |
 | `APP_ORIGIN` | `https://ai-phone-receptionist-five.vercel.app` (or your canonical HTTPS domain) |
-| `DEMO_ADMIN_PASSWORD` | A unique private password of at least 16 characters |
+| `DEMO_ADMIN_PASSWORD` | A private six-digit PIN or password of at least 16 characters |
 
 Redeploy after changing environment variables. Open the canonical site address, sign in as admin,
 then use Test receptionist. Preview/deployment-specific URLs are not the configured mutation origin.
