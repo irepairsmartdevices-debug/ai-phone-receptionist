@@ -14,7 +14,7 @@ Enter the same credential privately in both projects; never commit it or send it
 | --- | --- |
 | `RECEPTIONIST_API_TOKEN` | The dedicated integration credential |
 | `RECEPTIONIST_ORIGIN` | `https://ai-phone-receptionist-five.vercel.app` |
-| `APP_URL` | The repair site's final canonical HTTPS origin |
+| `APP_URL` | `https://shopify-phone-repair-booking.vercel.app` |
 
 Keep the repair project's current database, administrator credentials and session
 secret. Its production build applies the additive integration migration; do not run
@@ -23,7 +23,7 @@ seed scripts against an existing hosted database.
 | Receptionist project variable | Value |
 | --- | --- |
 | `REPAIR_SERVICE_TOKEN` | The same dedicated integration credential |
-| `REPAIR_SERVICE_URL` | The repair site's final canonical HTTPS origin |
+| `REPAIR_SERVICE_URL` | `https://shopify-phone-repair-booking.vercel.app` |
 | `RECEPTIONIST_MODE` | `connected` |
 | `APP_ORIGIN` | `https://ai-phone-receptionist-five.vercel.app` |
 
@@ -58,3 +58,14 @@ Settings' Connected label reflects the configured mode; use a successful live ca
 request and administrator authorization as evidence that connection actually works.
 Real customer ticket verification also requires registered-contact SMS delivery in
 the repair app. Connecting the catalog does not configure Twilio phone calling.
+
+
+## Confirmed project addresses
+
+The owner confirmed the repair site as
+`https://shopify-phone-repair-booking.vercel.app`. The receptionist remains
+`https://ai-phone-receptionist-five.vercel.app`. In Vercel, import the matching
+private settings into Production for each project, updating only those keys and
+retaining existing database, AI and phone settings. Redeploy the repair project
+first and wait for Ready, then redeploy the receptionist and authorize the
+connection. The private credential itself is never stored in this repository.
