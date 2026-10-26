@@ -16,6 +16,9 @@ import {
 import { withAudit } from "../repair/audit";
 import { getService } from "../repair/service";
 import { OpenAIModel } from "../providers/openai";
+import type { Proposal } from "../providers/model";
+import { getKnowledge } from "../knowledge/store";
+import { matchCustomAnswer } from "../providers/knowledge";
 const xml = (body: string) =>
   new Response(body, {
     headers: { "Content-Type": "text/xml", "Cache-Control": "no-store" },
@@ -167,20 +170,13 @@ export async function handleVoiceWebhook(
           if (session)
             actor = { role: session.role, grant: session.staff_grant };
         }
-        let input = text;
+        let intentHint: Proposal["intent"] | undefined;
         if ((state.step ?? "start") === "start" && env.AI_PROVIDER_KEY)
           try {
             const proposal = await new OpenAIModel(
               env.AI_PROVIDER_KEY,
             ).proposeTurn(text);
-            input = {
-              business: "repair prices",
-              hours: "hours",
-              ticket: "ticket status",
-              booking: "book appointment",
-              staff_change: "change status",
-              other: text,
-            }[proposal.intent];
+            intentHint = proposal.intent;
           } catch {
             /* Deterministic safe routing remains available during model outages. */
           }
@@ -193,7 +189,10 @@ export async function handleVoiceWebhook(
               JSON.stringify(pending),
             ]);
           },
-        ).turn(state, input, actor, call.conversation_id);
+          await getKnowledge(),
+          (question, answers) =>
+            matchCustomAnswer(question, answers, env.AI_PROVIDER_KEY),
+        ).turn(state, text, actor, call.conversation_id, intentHint);
         state = result.state;
         answer = result.text;
       }

@@ -105,3 +105,30 @@ the session immediately. Changing the password revokes earlier demo sessions aft
 The login has a shared database limit of 30 attempts per 15 minutes; wait if limited.
 No additional tables are needed beyond migrations 001 and 002. Demo access never authorizes the
 connected repair service or live calls. Connected mode requires a repair administrator account.
+
+## Custom answers and device-specific estimates
+
+Open **Knowledge & pricing** in the admin panel (or Settings → Open Knowledge & pricing).
+Add a question, approved answer and optional alternate phrasings, then save. Edit and delete controls
+apply on the next conversation turn; deleting does not remove earlier transcript history.
+Exact saved questions and alternate phrasings work without an AI key. Set server-only `AI_PROVIDER_KEY`
+for semantic matching of other phrasings. The provider selects a saved answer ID; the receptionist
+returns your approved answer. Ambiguous matches ask for clarification rather than inventing an answer.
+
+Add manual prices by device category, brand, exact model and repair type. Enter amounts in USD.
+The assistant asks for missing device/model/repair details before quoting one matching estimate.
+Unknown models and unavailable prices lead to a callback offer. Manual estimates do not create
+bookable services or change repair-app appointment totals.
+
+The catalog list shows demonstration entries in fixture mode and current repair-software entries
+in connected mode. To replace one informational source estimate, explicitly select it in the
+manual-price override field. Delete the override to restore the source estimate. Unlinked manual
+entries never silently override a matching source offering. A linked estimate is unavailable when
+its source offering disappears; standalone manual entries remain usable during a source outage.
+
+Both test conversations and configured connected voice use this knowledge. No extra database
+migration is required: records use the existing `settings` table. Connecting real catalog prices
+still requires deploying the separate repair integration. Its retained commit is
+`2b396fd9e1e30bdccbd17a0a860cfc4cb6cef8e2`; the updated portable patch is in
+`docs/integration/repair-api.patch`. Older source APIs are accepted, with conservative clarification
+when category/brand metadata is missing.

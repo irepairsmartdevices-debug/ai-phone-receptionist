@@ -39,7 +39,10 @@ test("business facts are sourced and unsupported questions are not guessed", asy
     customer,
     "c",
   );
-  assert.match(r.text, /99/);
+  assert.match(r.text, /exact model/i);
+  assert.doesNotMatch(r.text, /\$99/);
+  const quote = await engine.turn(r.state, "Demo Phone", customer, "c");
+  assert.match(quote.text, /99/);
   const unknown = await engine.turn(
     { step: "start" },
     "When will my water damaged laptop be ready?",

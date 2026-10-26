@@ -48,6 +48,13 @@ export const BusinessSchema = z.object({
     z.object({
       id: z.string(),
       device: z.string(),
+      categoryId: z.string().optional(),
+      category: z.string().optional(),
+      brandId: z.string().optional(),
+      brand: z.string().optional(),
+      modelId: z.string().optional(),
+      model: z.string().optional(),
+      serviceId: z.string().optional(),
       service: z.string(),
       price: z.number(),
       duration: z.number(),

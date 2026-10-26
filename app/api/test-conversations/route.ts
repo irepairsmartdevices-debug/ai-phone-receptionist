@@ -10,6 +10,8 @@ import {
 import { requireStaff, assertMutationOrigin } from "../../../src/auth/guards";
 import { withAudit } from "../../../src/repair/audit";
 import { getService } from "../../../src/repair/service";
+import { getKnowledge } from "../../../src/knowledge/store";
+import { matchCustomAnswer } from "../../../src/providers/knowledge";
 import {
   ConversationEngine,
   type State,
@@ -62,6 +64,8 @@ export async function POST(request: NextRequest) {
             JSON.stringify(pending),
           ]);
         },
+        await getKnowledge(),
+        matchCustomAnswer,
       ).turn(
         conversation.state as State,
         body.text,

@@ -10,6 +10,15 @@ import {
   consumeConfirmation,
   confirmationWasConsumed,
 } from "../security/confirmations";
+import type { AnswerMatcher, KnowledgeSnapshot } from "../knowledge/types";
+import {
+  isPriceQuestion,
+  matchSavedAnswer,
+  quoteCatalog,
+  resolveQuote,
+  type QuoteDetails,
+  type LastQuote,
+} from "../knowledge/resolve";
 export type Actor = { role: "customer" | "staff" | "admin"; grant?: string };
 export type State = {
   step: string;
@@ -23,6 +32,8 @@ export type State = {
   operationId?: string;
   ticket?: Ticket;
   slots?: { start: string; label: string }[];
+  pricing?: QuoteDetails;
+  lastQuote?: LastQuote;
 };
 export type Turn = { text: string; state: State };
 const reply = (text: string, state: State): Turn => ({ text, state });
@@ -34,12 +45,21 @@ export class ConversationEngine {
     private service: RepairService,
     private mode: "fixture" | "connected" = "fixture",
     private onPending?: (state: State) => Promise<void>,
+    private knowledge: KnowledgeSnapshot = { answers: [], prices: [] },
+    private answerMatcher?: AnswerMatcher,
   ) {}
   async turn(
     state: State,
     text: string,
     actor: Actor,
     conversationId: string,
+    intentHint?:
+      | "business"
+      | "hours"
+      | "ticket"
+      | "booking"
+      | "staff_change"
+      | "other",
   ): Promise<Turn> {
     const value = text.trim(),
       lower = value.toLowerCase(),
@@ -80,9 +100,10 @@ export class ConversationEngine {
         { step: "start" },
       );
     if (
-      /\b(cancel|change status|mark .*complete|admin|ignore .*rules)\b/i.test(
+      (/\b(cancel|change status|mark .*complete|admin|ignore .*rules)\b/i.test(
         value,
-      ) &&
+      ) ||
+        (state.step === "start" && intentHint === "staff_change")) &&
       actor.role === "customer"
     )
       return reply(
@@ -226,6 +247,30 @@ export class ConversationEngine {
             r.code === "UNCERTAIN" ? pending : { step: "start" },
           );
     }
+    if (state.step === "pricing") {
+      if (/\b(book|appointment|schedule)\b/.test(lower))
+        return this.turn(
+          { step: "start", lastQuote: state.lastQuote },
+          text,
+          actor,
+          conversationId,
+        );
+      const business = await this.service.business();
+      const result = resolveQuote(
+        quoteCatalog(
+          business.ok ? business.value : undefined,
+          this.knowledge.prices,
+        ),
+        state.pricing ?? {},
+        value,
+      );
+      return reply(
+        result.text,
+        result.details
+          ? { step: "pricing", pricing: result.details }
+          : { step: "start", lastQuote: result.quote },
+      );
+    }
     if (state.step === "booking")
       return this.bookingTurn(state, value, conversationId);
     if (state.step === "book-confirm") {
@@ -284,32 +329,78 @@ export class ConversationEngine {
             r.code === "UNCERTAIN" ? pending : { step: "start" },
           );
     }
-    if (/\b(cancel|change status)\b/.test(lower) && actor.role !== "customer")
+    if (
+      (/\b(cancel|change status)\b/.test(lower) ||
+        intentHint === "staff_change") &&
+      actor.role !== "customer"
+    )
       return reply(
         "Enter the ticket reference to review the current status and permitted cancellation.",
         { step: "staff-ticket" },
       );
-    if (/\b(ticket|status|repair ready)\b/.test(lower))
+    if (
+      /\b(ticket|status|repair ready)\b/.test(lower) ||
+      intentHint === "ticket"
+    )
       return reply(
         "What is your ticket number? Verification is required before I share private repair information.",
         { step: "ticket" },
       );
-    if (/\b(book|appointment|schedule)\b/.test(lower)) {
+    if (
+      /\b(book|appointment|schedule)\b/.test(lower) ||
+      intentHint === "booking"
+    ) {
       const business = await this.service.business();
       if (!business.ok) return reply(unavailable, { step: "start" });
       return reply(
         `Which store? ${business.value.locations.map((l, i) => `${i + 1}. ${l.name}`).join(" · ")}`,
-        { step: "booking", field: 0, booking: { answers: {} } },
+        {
+          step: "booking",
+          field: 0,
+          booking: { answers: {} },
+          lastQuote: state.lastQuote,
+        },
       );
+    }
+    if (isPriceQuestion(value)) {
+      const business = await this.service.business();
+      const result = resolveQuote(
+        quoteCatalog(
+          business.ok ? business.value : undefined,
+          this.knowledge.prices,
+        ),
+        {},
+        value,
+      );
+      return reply(
+        result.text,
+        result.details
+          ? { step: "pricing", pricing: result.details }
+          : { step: "start", lastQuote: result.quote },
+      );
+    }
+    const saved = matchSavedAnswer(value, this.knowledge.answers);
+    if (saved.answer) return reply(saved.answer.answer, { step: "start" });
+    if (saved.ambiguous)
+      return reply(
+        "I found more than one saved answer that could fit. Could you clarify your question?",
+        { step: "start" },
+      );
+    if (this.answerMatcher && this.knowledge.answers.length) {
+      try {
+        const id = await this.answerMatcher(value, this.knowledge.answers);
+        const answer = this.knowledge.answers.find((a) => a.id === id);
+        if (answer) return reply(answer.answer, { step: "start" });
+      } catch {
+        /* Provider outages must not invent facts or block source information. */
+      }
     }
     const business = await this.service.business();
     if (!business.ok) return reply(unavailable, { step: "start" });
-    if (/\b(price|cost|screen|battery|service|repair|much)\b/.test(lower))
-      return reply(
-        `${business.value.offerings.map((o) => `${o.device} ${o.service}: $${o.price} estimate`).join("\n")}\nFinal pricing is confirmed by the shop after inspection. I can help book an appointment.`,
-        { step: "start" },
-      );
-    if (/\b(hours|open|location|address|where)\b/.test(lower))
+    if (
+      /\b(hours|open|location|address|where)\b/.test(lower) ||
+      intentHint === "hours"
+    )
       return reply(
         business.value.locations
           .map((l) => `${l.name}: ${l.address}. ${l.hours} (${l.timeZone}).`)
@@ -433,12 +524,13 @@ export class ConversationEngine {
       const store = b.value.locations.find((l) => l.id === booking.locationId)!,
         offering = b.value.offerings.find((o) => o.id === booking.offeringId)!;
       return reply(
-        `Review your ${this.mode === "fixture" ? "DEMO " : ""}booking:\n${offering.device} · ${offering.service} · $${offering.price} estimate\n${store.name} · ${new Intl.DateTimeFormat("en-US", { dateStyle: "full", timeStyle: "long", timeZone: store.timeZone }).format(new Date(booking.start!))}\n${booking.firstName} ${booking.lastName} · ${booking.email} · ${booking.phone}\nText updates: ${booking.smsConsent ? "yes" : "no"}\nType “confirm” to book, or “restart” to cancel.`,
+        `${state.lastQuote?.source === "manual" ? `Your earlier informational estimate was $${(state.lastQuote.priceCents / 100).toFixed(2)}. This appointment uses the repair software's own price below; review it before confirming.\n` : ""}Review your ${this.mode === "fixture" ? "DEMO " : ""}booking:\n${offering.device} · ${offering.service} · $${offering.price} estimate\n${store.name} · ${new Intl.DateTimeFormat("en-US", { dateStyle: "full", timeStyle: "long", timeZone: store.timeZone }).format(new Date(booking.start!))}\n${booking.firstName} ${booking.lastName} · ${booking.email} · ${booking.phone}\nText updates: ${booking.smsConsent ? "yes" : "no"}\nType “confirm” to book, or “restart” to cancel.`,
         {
           step: "book-confirm",
           booking,
           confirmationId,
           operationId: randomUUID(),
+          lastQuote: state.lastQuote,
         },
       );
     } else {

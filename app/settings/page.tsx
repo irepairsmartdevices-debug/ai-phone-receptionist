@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { db } from "../../src/persistence/db";
 import { requireAdmin } from "../../src/auth/guards";
 import SettingsForm from "./client";
@@ -24,6 +25,11 @@ export default async function Settings() {
           <p>Your business, your greeting, your connections.</p>
         </div>
       </div>
+      <p>
+        <Link className="button" href="/knowledge">
+          Manage questions, answers &amp; repair prices →
+        </Link>
+      </p>
       <div className="stack">
         <section className="panel">
           <div className="section-heading">

@@ -388,6 +388,61 @@ index 0000000..caf2861
 +  );
 +  assert.match(pkceDigest("a".repeat(43)), /^[\w-]{43}$/);
 +});
+diff --git a/lib/receptionist-catalog.test.ts b/lib/receptionist-catalog.test.ts
+new file mode 100644
+index 0000000..a4023f0
+--- /dev/null
++++ b/lib/receptionist-catalog.test.ts
+@@ -0,0 +1,49 @@
++import test from "node:test";
++import assert from "node:assert/strict";
++import { business } from "./receptionist/service";
++import { db } from "./db";
++
++test("receptionist catalog exposes exact category, brand, model and repair identity without changing price units", async () => {
++  const source = await db.offering.findMany({
++    include: {
++      model: { include: { brand: { include: { category: true } } } },
++      service: true,
++    },
++  });
++  assert.ok(
++    source.length,
++    "dedicated integration database must have catalog fixture data",
++  );
++  const snapshot = await business();
++  assert.equal(snapshot.offerings.length, source.length);
++  for (const original of source) {
++    const offering = snapshot.offerings.find(
++      (item) => item.id === original.id,
++    )!;
++    assert.ok(offering);
++    assert.deepEqual(
++      {
++        categoryId: offering.categoryId,
++        category: offering.category,
++        brandId: offering.brandId,
++        brand: offering.brand,
++        modelId: offering.modelId,
++        model: offering.model,
++        serviceId: offering.serviceId,
++      },
++      {
++        categoryId: original.model.brand.categoryId,
++        category: original.model.brand.category.name,
++        brandId: original.model.brandId,
++        brand: original.model.brand.name,
++        modelId: original.modelId,
++        model: original.model.name,
++        serviceId: original.serviceId,
++      },
++    );
++    assert.equal(offering.device, original.model.name);
++    assert.equal(offering.service, original.service.name);
++    assert.equal(offering.price, original.price / 100);
++    assert.equal(offering.duration, original.duration);
++  }
++});
 diff --git a/lib/receptionist-service.test.ts b/lib/receptionist-service.test.ts
 new file mode 100644
 index 0000000..8e70f2b
@@ -594,10 +649,10 @@ index 0000000..166635a
 +}
 diff --git a/lib/receptionist/service.ts b/lib/receptionist/service.ts
 new file mode 100644
-index 0000000..9e771ea
+index 0000000..d0357db
 --- /dev/null
 +++ b/lib/receptionist/service.ts
-@@ -0,0 +1,525 @@
+@@ -0,0 +1,535 @@
 +import {
 +  createHash,
 +  createHmac,
@@ -968,7 +1023,10 @@ index 0000000..9e771ea
 +      include: { businessHours: true },
 +    }),
 +    db.offering.findMany({
-+      include: { model: { include: { brand: true } }, service: true },
++      include: {
++        model: { include: { brand: { include: { category: true } } } },
++        service: true,
++      },
 +    }),
 +    db.preRepairQuestion.findMany({
 +      where: { enabled: true, archived: false },
@@ -997,6 +1055,13 @@ index 0000000..9e771ea
 +    offerings: offerings.map((o) => ({
 +      id: o.id,
 +      device: o.model.name,
++      categoryId: o.model.brand.categoryId,
++      category: o.model.brand.category.name,
++      brandId: o.model.brandId,
++      brand: o.model.brand.name,
++      modelId: o.modelId,
++      model: o.model.name,
++      serviceId: o.serviceId,
 +      service: o.service.name,
 +      price: o.price / 100,
 +      duration: o.duration,

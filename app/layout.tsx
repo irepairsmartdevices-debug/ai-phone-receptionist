@@ -34,6 +34,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             <Link href="/calls">
               ☎ <span>Calls</span>
             </Link>
+            <Link href="/knowledge">
+              ◇ <span>Knowledge &amp; pricing</span>
+            </Link>
             <Link href="/settings">
               ⚙ <span>Settings</span>
             </Link>

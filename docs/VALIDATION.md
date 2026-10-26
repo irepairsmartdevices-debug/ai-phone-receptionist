@@ -40,3 +40,23 @@ The receptionist work and the repair integration are local Git commits. They hav
 The environment configuration draft records installation/startup instructions and both retained repositories. Saving a draft does not publish or deploy it. Fresh-task restoration of these local-only commits has not been verified; the platform documents limitations restoring unpublished local commits. Retain the patch and commit history and review the snapshot before relying on a new task.
 
 For live readiness, deploy both reviewed apps, configure the secure machine connection, Twilio, the AI provider and canonical HTTPS webhook origin, then verify a real inbound call, delivered customer verification, a confirmed operation and transfer/fallback. No production database migration, phone-number purchase or deployment was performed here.
+
+
+## 2026-10-26: Custom answers and exact-model estimates
+
+Admin knowledge CRUD uses individual namespaced settings records, existing administrator sessions and
+mutation-origin protection. Q&A variants and conservative lexical matching work without an external
+provider. Optional semantic matching selects a current saved answer ID only. Manual entries and
+explicit linked quote overrides never create source offerings or change source booking totals.
+Browser and connected voice load current knowledge each turn; original caller model details are preserved.
+
+Verification: main Node tests 61/61; source tests 279/279 and source TypeScript passed; main production
+build and TypeScript passed. Production browser checks cover administrator Q&A and price CRUD at 1440px
+and 390px, anonymous/cross-origin denial, immediate edit/delete reply changes and existing admin logout.
+Source patch applies cleanly to original ed1350a base. Real provider semantic calls, real phone calls,
+and a deployed repair-service connection remain unverified/unconfigured here.
+
+Review regressions: changing an earlier screen request to unsupported camera repair cannot reuse the
+screen price; repair names on another model cannot cause a clarification loop. Both failed before the fix
+and passed afterward. Source price changes after booking review remain an existing source contract
+limitation; all prices are estimates, not a price lock.
