@@ -128,3 +128,27 @@ Real deployed OpenAI requests and live Twilio calls remain unverified from this 
 
 Final verification: Node suite107/107; production browser suites10/10 (knowledge6,
 adaptive4); TypeScript, production build and diff checks passed.
+
+
+## Hosted repair-service connection preparation
+
+Ported the source integration onto current repair main811fcb1 and published it as
+source commita44e20c, preserving current catalog/time-clock changes. Refreshed the
+portable patch against that new base and added a production connection guide.
+Fixed cross-site Strict-cookie administrator authorization with an explicit
+same-origin continuation, and included the integration migration in both source
+SQL bootstrap bundles so repeated deployments remain valid.
+
+Verified: source297 Node tests; SQL bootstrap QA5; production Vercel upgrade,
+Prisma migration verification and Next build on a separate disposable database;
+source TypeScript and synthetic Strict-cookie browser checks. Receptionist
+integration suite5/5 passed, including changed prices/new models/removals and
+verified-ticket authorization. The updated connected browser regression passed
+actual localhost-to-127.0.0.1 administrator authorization, explicit cancellation
+of its disposable local ticket, and call pairing. No production data was changed
+by tests. The owner's live repair URL and private hosting variables were not
+available, so a hosted connection is not yet claimed.
+
+Final receptionist checks: Node107/107 and TypeScript passed. The refreshed
+portable patch applies cleanly to its documented811fcb1 base. Patch context
+whitespace is preserved as required by the unified diff format.

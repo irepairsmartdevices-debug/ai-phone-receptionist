@@ -12,10 +12,10 @@ index dea6dcb..111304f 100644
 +# Exact receptionist HTTPS origin (localhost HTTP is allowed only for development).
 +RECEPTIONIST_ORIGIN=
 diff --git a/README.md b/README.md
-index afe076c..3c283f9 100644
+index f05b11b..9531548 100644
 --- a/README.md
 +++ b/README.md
-@@ -236,3 +236,11 @@ In **Admin → Appointments**, choose **Edit ticket** to correct the customer's
+@@ -238,3 +238,46 @@ In **Admin → Appointments**, choose **Edit ticket** to correct the customer's
  Changing a contact phone does not change the customer's portal username or assign the ticket to another account. A changed number clears appointment SMS consent until the customer opts in again. Saving a ticket edit does not send a new email or text; pending messages with superseded contact, device, service, name, or price details are stopped. The editor rejects stale changes so a second browser cannot silently overwrite a newer edit.
  
  **Delete ticket** opens a separate review and requires the exact displayed numeric ticket number. Deletion permanently removes that appointment, its before/after photos, checkout record, saved condition answers, queued notification records, and ticket-specific access challenges. Customer accounts, other tickets, employees, time records, and the ticket-number sequence remain. Deleted ticket links and photo links no longer open the record. An edit or deletion is temporarily blocked while an appointment message is processing; refresh and retry after it finishes.
@@ -27,12 +27,88 @@ index afe076c..3c283f9 100644
 +Customers must verify a code delivered to the ticket's registered contact before reading its status. Caller ID alone grants no access. Missing message-provider configuration does not bypass verification. Customer-visible projections omit internal notes and account credentials.
 +
 +Bookings use the original availability/intake/notification workflow with transaction-scoped idempotency hooks. Confirmed cancellations require a staff grant and the exact current ticket version; their audit and notification records commit with the change. Intake and checkout prerequisites remain mandatory; there is no unrestricted status setter. Apply `20261023010000_receptionist_integration` with your normal migration process before enabling this API. No production migration or deployment was performed during local development.
++
++
++### Hosted receptionist connection
++
++The administrator-only receptionist is at `https://ai-phone-receptionist-five.vercel.app`.
++Deploy the integration migration with the existing Vercel production build hook;
++never seed an existing production database. Keep both applications on their existing,
++separate databases so saved repair data and receptionist knowledge are retained.
++
++Use one dedicated long random private integration credential, stored only in server
++hosting variables. It is separate from an administrator password or six-digit PIN.
++Configure this repair project with `RECEPTIONIST_API_TOKEN` (that credential),
++`RECEPTIONIST_ORIGIN=https://ai-phone-receptionist-five.vercel.app`, and `APP_URL`
++set to this repair application's exact canonical HTTPS origin. Keep its existing
++`DATABASE_URL`, administrator credentials and `SESSION_SECRET`.
++
++Configure the receptionist project with the same credential as `REPAIR_SERVICE_TOKEN`,
++this repair application's origin as `REPAIR_SERVICE_URL`, `RECEPTIONIST_MODE=connected`,
++and `APP_ORIGIN=https://ai-phone-receptionist-five.vercel.app`. Redeploy both after
++changing variables. Use the final host directly; integration requests reject redirects.
++The callback is exactly `https://ai-phone-receptionist-five.vercel.app/api/auth/callback`.
++
++Sign in to the repair app as an administrator, then open the receptionist's `/sign-in`
++and choose **Connect admin account**. When the apps are on different sites, choose
++**Continue to administrator approval** before the final **Connect admin account**
++approval. This keeps the existing Strict administrator cookie policy. No grant is
++created merely by opening the public continuation page. The connected receptionist
++accepts administrators only, even though the scoped repair API can represent other
++permitted repair actors. Demo PIN access does not authorize connected repair actions.
++
++The connected catalog is read without caching on each pricing turn. Source prices
++and new models with configured offerings become available on the next question.
++The local `scripts/receptionist-cross-site-qa.ts` regression verifies the cross-site
++cookie flow without live credentials; the separate receptionist repository has the
++full two-application integration and browser checks.
+diff --git a/VALIDATION.md b/VALIDATION.md
+index 6f9b459..f39a5a5 100644
+--- a/VALIDATION.md
++++ b/VALIDATION.md
+@@ -209,3 +209,36 @@ All tests used local/disposable records, synthetic intercepted browser data and
+ - **8 mocked Chromium scenarios passed** for validation, failed-save draft retention, navigation guards, in-flight locking, successful field clearing and signed-in state, long current passwords, maximum new-password length, committed-save refresh failure without duplicate posting, mobile account layout, and public/admin/employee portal links. Zero page errors or horizontal overflow occurred; synthetic mobile screenshots were visually inspected.
+ 
+ Verification used loopback/disposable PostgreSQL, synthetic browser fixtures and provider-stripped servers. No live administrator password, customer data, email or text was changed by these tests. Hosted deployment status is checked separately for the exact published commit.
++
++
++## Receptionist production connection preparation
++
++Reapplied the receptionist integration on the current repair-app main at 811fcb1,
++retaining the newer model ordering, Add model placement and employee time-clock
++updates. The additive ReceptionistRecord migration stores scoped verification,
++authorization and idempotency records; the receptionist keeps a separate database.
++
++Cross-site navigation originally withheld the repair app's Strict admin cookie and
++returned 401 before approval. Route and actual Chromium regressions failed before
++the fix, then passed with a public validated same-origin continuation before the
++existing authenticated CSRF/PKCE approval. Cookies were not relaxed. Local browser
++validation also completed administrator authorization from localhost to 127.0.0.1,
++then an explicit cancellation of a disposable local test ticket and call pairing.
++No production customer data or credentials were used in these checks.
++
++The production SQL bootstrap initially omitted migration 12 from its registry and
++schema assertions, which would block later deployments after Prisma recorded it.
++Both generated SQL bundles now include the exact migration checksum and stage-12
++ReceptionistRecord metadata. Disposable local database regressions passed for
++stage-11 upgrade, tracked-stage-12 reruns, record preservation, fresh setup and
++refusal of missing/partial table schemas. The full Vercel production build hook
++also passed against a separately created disposable database with 12 tracked
++migrations; Prisma reported no pending migrations and the Next build completed.
++All temporary QA databases were removed.
++
++Final verification: source Node297/297; SQL bootstrap QA5/5; production Next/Vercel
++build and TypeScript passed; synthetic cross-site Chromium QA passed; receptionist
++integration suite5/5 and actual cross-site connected browser1/1 passed. Hosted
++provider settings and the owner's live repair-site URL were not available here,
++so these results establish local/deployment preparation rather than a live
++production connection.
 diff --git a/app/api/integrations/receptionist/v1/[...path]/route.ts b/app/api/integrations/receptionist/v1/[...path]/route.ts
 new file mode 100644
-index 0000000..3c0feae
+index 0000000..de5bdc3
 --- /dev/null
 +++ b/app/api/integrations/receptionist/v1/[...path]/route.ts
-@@ -0,0 +1,286 @@
+@@ -0,0 +1,289 @@
 +import { NextRequest, NextResponse } from "next/server";
 +import { randomBytes, randomUUID } from "node:crypto";
 +import { cookies } from "next/headers";
@@ -46,6 +122,7 @@ index 0000000..3c0feae
 +  machineAuthorized,
 +  validRedirect,
 +  pkceDigest,
++  authorizationLanding,
 +} from "@/lib/receptionist/auth";
 +import * as service from "@/lib/receptionist/service";
 +import { after } from "next/server";
@@ -90,6 +167,8 @@ index 0000000..3c0feae
 +    if (path === "authorize") {
 +      const q = callbackQuery(request);
 +      if (!validRedirect(q.redirect_uri)) return fail("INVALID");
++      const landing = authorizationLanding(request, q);
++      if (landing) return landing;
 +      await requireRepairActor();
 +      const csrf = randomBytes(32).toString("hex");
 +      (await cookies()).set("receptionist_authorize", csrf, {
@@ -112,7 +191,7 @@ index 0000000..3c0feae
 +            })[c]!,
 +        );
 +      return new Response(
-+        `<!doctype html><html><head><title>Connect receptionist</title></head><body><h1>Connect your staff account?</h1><p>The receptionist can read permitted tickets and request confirmed cancellations. Intake and checkout stay in this repair app.</p><form method="post"><input type="hidden" name="csrf" value="${csrf}"/>${Object.entries(
++        `<!doctype html><html><head><title>Connect receptionist</title></head><body><h1>Connect your admin account?</h1><p>The receptionist can read permitted tickets and request confirmed cancellations. Intake and checkout stay in this repair app.</p><form method="post"><input type="hidden" name="csrf" value="${csrf}"/>${Object.entries(
 +          q,
 +        )
 +          .map(
@@ -120,7 +199,7 @@ index 0000000..3c0feae
 +          )
 +          .join(
 +            "",
-+          )}<button>Connect staff account</button></form></body></html>`,
++          )}<button>Connect admin account</button></form></body></html>`,
 +        {
 +          headers: {
 +            "Content-Type": "text/html",
@@ -346,19 +425,48 @@ index 6fdc58d..697955a 100644
    // The initial password is returned once to the public booking handler only.
    // It is never part of appointment persistence or notification payloads.
    return portal?.newAccount?{...appointment,customerAccountAccess:portal.newAccount}:appointment;
+diff --git a/lib/neon-sql.test.ts b/lib/neon-sql.test.ts
+new file mode 100644
+index 0000000..eb8019f
+--- /dev/null
++++ b/lib/neon-sql.test.ts
+@@ -0,0 +1,17 @@
++import {test} from 'node:test';
++import assert from 'node:assert/strict';
++import {createHash} from 'node:crypto';
++import {readdirSync,readFileSync} from 'node:fs';
++import {join} from 'node:path';
++import {migrations} from '../scripts/neon-sql';
++
++test('SQL bootstrap registers every Prisma migration with its exact executable bytes and checksum',()=>{
++ const directory='prisma/migrations';
++ const names=readdirSync(directory,{withFileTypes:true}).filter(entry=>entry.isDirectory()).map(entry=>entry.name).sort();
++ assert.deepEqual(migrations.map(migration=>migration.name),names,'A missing registry entry prevents SQL setup and repeat deployments from recognizing the Prisma migration.');
++ for(const migration of migrations){
++  const source=readFileSync(join(directory,migration.name,'migration.sql'),'utf8');
++  assert.equal(migration.sql,source);
++  assert.equal(migration.checksum,createHash('sha256').update(source).digest('hex'));
++ }
++});
 diff --git a/lib/receptionist-auth.test.ts b/lib/receptionist-auth.test.ts
 new file mode 100644
-index 0000000..caf2861
+index 0000000..ca979e1
 --- /dev/null
 +++ b/lib/receptionist-auth.test.ts
-@@ -0,0 +1,36 @@
+@@ -0,0 +1,140 @@
 +import test from "node:test";
 +import assert from "node:assert/strict";
++import { AsyncLocalStorage } from "node:async_hooks";
++import type { WorkStore } from "next/dist/server/app-render/work-async-storage.external";
 +import {
 +  machineAuthorized,
 +  pkceDigest,
 +  validRedirect,
 +} from "./receptionist/auth";
++Object.defineProperty(globalThis, "AsyncLocalStorage", {
++  value: AsyncLocalStorage,
++  configurable: true,
++});
 +test("machine credential uses dedicated token and rejects absent or malformed authorization", () => {
 +  assert.equal(machineAuthorized("Bearer abc", "abc"), true);
 +  assert.equal(machineAuthorized("Bearer abc", ""), false);
@@ -387,6 +495,104 @@ index 0000000..caf2861
 +    false,
 +  );
 +  assert.match(pkceDigest("a".repeat(43)), /^[\w-]{43}$/);
++});
++
++const authorizationQuery = {
++  redirect_uri: "https://receptionist.test/api/auth/callback",
++  state: "a".repeat(32),
++  code_challenge: "b".repeat(43),
++};
++async function authorize(
++  fetchSite: string | undefined,
++  query = authorizationQuery,
++) {
++  const [
++    { NextRequest },
++    { createRequestStoreForAPI },
++    { workUnitAsyncStorage },
++    { workAsyncStorage },
++    route,
++  ] = await Promise.all([
++    import("next/server"),
++    import("next/dist/server/async-storage/request-store.js"),
++    import("next/dist/server/app-render/work-unit-async-storage.external.js"),
++    import("next/dist/server/app-render/work-async-storage.external.js"),
++    import("../app/api/integrations/receptionist/v1/[...path]/route"),
++  ]);
++  const pathname = "/api/integrations/receptionist/v1/authorize";
++  const request = new NextRequest(
++    "https://repair.test" + pathname + "?" + new URLSearchParams(query),
++    { headers: fetchSite ? { "sec-fetch-site": fetchSite } : {} },
++  );
++  const store = createRequestStoreForAPI(
++    request,
++    { pathname },
++    { tags: [], expirationsByCacheKind: new Map() },
++    undefined,
++    undefined,
++  );
++  const originalOrigin = process.env.RECEPTIONIST_ORIGIN;
++  process.env.RECEPTIONIST_ORIGIN = "https://receptionist.test";
++  try {
++    const response = await workAsyncStorage.run(
++      { route: pathname } as WorkStore,
++      () => workUnitAsyncStorage.run(store, () => route.GET(request, {
++        params: Promise.resolve({ path: ["authorize"] }),
++      })),
++    );
++    return { response, cookies: store.mutableCookies.getAll() };
++  } finally {
++    if (originalOrigin === undefined) delete process.env.RECEPTIONIST_ORIGIN;
++    else process.env.RECEPTIONIST_ORIGIN = originalOrigin;
++  }
++}
++
++test("cross-site authorization offers a same-origin continuation before requiring the Strict admin cookie", async () => {
++  const { response, cookies } = await authorize("cross-site");
++  assert.equal(response.status, 200);
++  assert.match(response.headers.get("content-type") ?? "", /text\/html/);
++  assert.match(response.headers.get("cache-control") ?? "", /no-store/);
++  assert.match(response.headers.get("content-security-policy") ?? "", /default-src 'none'/);
++  assert.match(response.headers.get("content-security-policy") ?? "", /frame-ancestors 'none'/);
++  assert.equal(response.headers.get("location"), null);
++  assert.deepEqual(cookies, [], "the public landing must not create an authorization session");
++  const html = await response.text();
++  const href = html.match(/<a href="([^"]+)"/i)?.[1].replace(/&amp;/g, "&");
++  assert.ok(href);
++  assert.ok(href.startsWith("/api/integrations/receptionist/v1/authorize?"));
++  const continuation = new URL(href, "https://repair.test");
++  assert.equal(continuation.origin, "https://repair.test");
++  assert.deepEqual(Object.fromEntries(continuation.searchParams), authorizationQuery);
++  assert.doesNotMatch(html, /<form|<script|http-equiv=["']?refresh/i);
++});
++
++test("authorization continuation preserves state safely without adding HTML or extra query fields", async () => {
++  const query = { ...authorizationQuery, state: "a".repeat(32) + '&"><script>alert(1)</script>' };
++  const { response } = await authorize("cross-site", query);
++  assert.equal(response.status, 200);
++  const html = await response.text();
++  assert.doesNotMatch(html, /<script|<form/i);
++  const href = html.match(/<a href="([^"]+)"/i)?.[1].replace(/&amp;/g, "&");
++  assert.ok(href);
++  assert.deepEqual(Object.fromEntries(new URL(href, "https://repair.test").searchParams), query);
++});
++
++test("cross-site landing still rejects a callback outside the exact allowlist", async () => {
++  const { response } = await authorize("cross-site", {
++    ...authorizationQuery,
++    redirect_uri: "https://evil.test/api/auth/callback",
++  });
++  assert.equal(response.status, 400);
++  assert.deepEqual(await response.json(), { ok: false, code: "INVALID" });
++});
++
++test("same-origin and headerless authorization still require an authenticated repair account", async () => {
++  for (const fetchSite of ["same-origin", undefined]) {
++    const { response, cookies } = await authorize(fetchSite);
++    assert.equal(response.status, 401);
++    assert.deepEqual(await response.json(), { ok: false, code: "UNAUTHORIZED" });
++    assert.deepEqual(cookies, []);
++  }
 +});
 diff --git a/lib/receptionist-catalog.test.ts b/lib/receptionist-catalog.test.ts
 new file mode 100644
@@ -610,10 +816,10 @@ index 0000000..8e70f2b
 +});
 diff --git a/lib/receptionist/auth.ts b/lib/receptionist/auth.ts
 new file mode 100644
-index 0000000..166635a
+index 0000000..17fc6f9
 --- /dev/null
 +++ b/lib/receptionist/auth.ts
-@@ -0,0 +1,33 @@
+@@ -0,0 +1,60 @@
 +import { createHash, timingSafeEqual } from "node:crypto";
 +export const digest = (s: string) =>
 +  createHash("sha256").update(s).digest("hex");
@@ -646,6 +852,33 @@ index 0000000..166635a
 +  } catch {
 +    return false;
 +  }
++}
++
++// Only call after validating the callback query. A cross-site arrival cannot
++// carry the repair app's Strict admin cookie; a user-initiated same-origin
++// navigation can, without changing that cookie's policy or authorizing anything.
++export function authorizationLanding(
++  request: Request,
++  query: { redirect_uri: string; state: string; code_challenge: string },
++) {
++  if (request.headers.get("sec-fetch-site") !== "cross-site") return null;
++  const continuation =
++    "/api/integrations/receptionist/v1/authorize?" + new URLSearchParams(query);
++  const safe = continuation.replace(/[&<>"']/g, (c) => ({
++    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
++  })[c]!);
++  return new Response(
++    `<!doctype html><html><head><meta charset="utf-8"><title>Continue to administrator approval</title></head><body><h1>Connect your receptionist</h1><p>Continue on this repair site to use your administrator session. You will review and approve the connection on the next page.</p><a href="${safe}">Continue to administrator approval</a></body></html>`,
++    {
++      headers: {
++        "Content-Type": "text/html; charset=utf-8",
++        "Cache-Control": "no-store",
++        "Content-Security-Policy": "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
++        "Referrer-Policy": "no-referrer",
++        "X-Content-Type-Options": "nosniff",
++      },
++    },
++  );
 +}
 diff --git a/lib/receptionist/service.ts b/lib/receptionist/service.ts
 new file mode 100644
@@ -1202,6 +1435,696 @@ index 0000000..52eb233
 + "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
 +);
 +CREATE INDEX "ReceptionistRecord_kind_expiresAt_idx" ON "ReceptionistRecord"("kind","expiresAt");
+diff --git a/prisma/neon-locations-upgrade.sql b/prisma/neon-locations-upgrade.sql
+index 6b00c56..1bfa4c3 100644
+--- a/prisma/neon-locations-upgrade.sql
++++ b/prisma/neon-locations-upgrade.sql
+@@ -46,6 +46,8 @@
+ -- Exact source SHA256: 632670d04975b60e4fc9044e5aa97a1ded06531eea4f81e4d77f93031f723109
+ -- Migration: 20261021030000_customer_portal
+ -- Exact source SHA256: 04b8c2e39c96883dd69c1c734bfb6e49c3d270e455c2e6399ade52add2e15ae8
++-- Migration: 20261023010000_receptionist_integration
++-- Exact source SHA256: fc830034208a6dd3310d31e3da889dc7fed28fc61fa49e19babb814733921362
+ BEGIN;
+ SET LOCAL search_path=public;
+ SET LOCAL timezone='UTC';
+@@ -67,8 +69,8 @@ DO $bootstrap$
+ DECLARE history_count INTEGER; applied_count INTEGER;
+ BEGIN
+   SELECT count(*) INTO history_count FROM "_prisma_migrations";
+-  IF history_count<1 OR history_count>11 THEN
+-    RAISE EXCEPTION 'Setup stopped: expected baseline, location, model presentation, pre-repair question, employee notification, staff repair checkout, admin credential, payment method order, display order, employee time clock, or customer portal migration history. Nothing was changed.';
++  IF history_count<1 OR history_count>12 THEN
++    RAISE EXCEPTION 'Setup stopped: expected baseline, location, model presentation, pre-repair question, employee notification, staff repair checkout, admin credential, payment method order, display order, employee time clock, customer portal, or receptionist integration migration history. Nothing was changed.';
+   END IF;
+   IF history_count>=1 AND (
+     SELECT count(*) FROM "_prisma_migrations" WHERE "migration_name"='20261006230000_postgresql_init' AND "checksum"='e1c5adc7f08539c54961221b1cc4275f9c2bb2a02e9d0fdcb503015b0e09a3fe'
+@@ -136,6 +138,12 @@ BEGIN
+   )<>1 THEN
+     RAISE EXCEPTION 'Setup stopped: migration history is incomplete, unexpected, or differs from this script. Nothing was changed.';
+   END IF;
++  IF history_count>=12 AND (
++    SELECT count(*) FROM "_prisma_migrations" WHERE "migration_name"='20261023010000_receptionist_integration' AND "checksum"='fc830034208a6dd3310d31e3da889dc7fed28fc61fa49e19babb814733921362'
++      AND "finished_at" IS NOT NULL AND "rolled_back_at" IS NULL
++  )<>1 THEN
++    RAISE EXCEPTION 'Setup stopped: migration history is incomplete, unexpected, or differs from this script. Nothing was changed.';
++  END IF;
+   applied_count=history_count;
+   IF applied_count=0 THEN
+     IF EXISTS (
+@@ -174,7 +182,8 @@ BEGIN
+       ('EmployeeTimeEntry',ARRAY['id','employeeId','clockedInAt','clockedOutAt','clockOutReason']::text[],10),
+       ('CustomerAccount',ARRAY['id','phone','passwordHash','phoneVerifiedAt','sessionVersion','loginFailures','loginLockedUntil','createdAt','updatedAt']::text[],11),
+       ('CustomerAccessChallenge',ARRAY['id','customerId','appointmentId','purpose','codeHash','expiresAt','attempts','consumedAt','createdAt']::text[],11),
+-      ('CustomerAccessThrottle',ARRAY['key','windowStartedAt','requests','lastRequestedAt']::text[],11)
++      ('CustomerAccessThrottle',ARRAY['key','windowStartedAt','requests','lastRequestedAt']::text[],11),
++      ('ReceptionistRecord',ARRAY['id','kind','payload','expiresAt','createdAt']::text[],12)
+     )
+     SELECT 1 FROM expected WHERE stage<=applied_count AND (
+       to_regclass(format('public.%I',table_name)) IS NULL OR
+@@ -194,7 +203,8 @@ BEGIN
+         || CASE WHEN applied_count>=7 THEN ARRAY['AdminCredential'] ELSE ARRAY[]::text[] END
+         || CASE WHEN applied_count>=9 THEN ARRAY['DisplayOrder'] ELSE ARRAY[]::text[] END
+         || CASE WHEN applied_count>=10 THEN ARRAY['EmployeeTimeEntry'] ELSE ARRAY[]::text[] END
+-        || CASE WHEN applied_count>=11 THEN ARRAY['CustomerAccount','CustomerAccessChallenge','CustomerAccessThrottle'] ELSE ARRAY[]::text[] END)
++        || CASE WHEN applied_count>=11 THEN ARRAY['CustomerAccount','CustomerAccessChallenge','CustomerAccessThrottle'] ELSE ARRAY[]::text[] END
++        || CASE WHEN applied_count>=12 THEN ARRAY['ReceptionistRecord'] ELSE ARRAY[]::text[] END)
+   ) THEN
+     RAISE EXCEPTION 'Setup stopped: application schema is missing, partial, or unexpected. Nothing was changed.';
+   END IF;
+@@ -290,7 +300,8 @@ $migration_2_sql$;
+       ('EmployeeTimeEntry',ARRAY['id','employeeId','clockedInAt','clockedOutAt','clockOutReason']::text[],10),
+       ('CustomerAccount',ARRAY['id','phone','passwordHash','phoneVerifiedAt','sessionVersion','loginFailures','loginLockedUntil','createdAt','updatedAt']::text[],11),
+       ('CustomerAccessChallenge',ARRAY['id','customerId','appointmentId','purpose','codeHash','expiresAt','attempts','consumedAt','createdAt']::text[],11),
+-      ('CustomerAccessThrottle',ARRAY['key','windowStartedAt','requests','lastRequestedAt']::text[],11)
++      ('CustomerAccessThrottle',ARRAY['key','windowStartedAt','requests','lastRequestedAt']::text[],11),
++      ('ReceptionistRecord',ARRAY['id','kind','payload','expiresAt','createdAt']::text[],12)
+     )
+     SELECT 1 FROM expected WHERE stage<=applied_count AND (
+       to_regclass(format('public.%I',table_name)) IS NULL OR
+@@ -310,7 +321,8 @@ $migration_2_sql$;
+         || CASE WHEN applied_count>=7 THEN ARRAY['AdminCredential'] ELSE ARRAY[]::text[] END
+         || CASE WHEN applied_count>=9 THEN ARRAY['DisplayOrder'] ELSE ARRAY[]::text[] END
+         || CASE WHEN applied_count>=10 THEN ARRAY['EmployeeTimeEntry'] ELSE ARRAY[]::text[] END
+-        || CASE WHEN applied_count>=11 THEN ARRAY['CustomerAccount','CustomerAccessChallenge','CustomerAccessThrottle'] ELSE ARRAY[]::text[] END)
++        || CASE WHEN applied_count>=11 THEN ARRAY['CustomerAccount','CustomerAccessChallenge','CustomerAccessThrottle'] ELSE ARRAY[]::text[] END
++        || CASE WHEN applied_count>=12 THEN ARRAY['ReceptionistRecord'] ELSE ARRAY[]::text[] END)
+   ) THEN
+     RAISE EXCEPTION 'Setup stopped: application schema is missing, partial, or unexpected. Nothing was changed.';
+   END IF;
+@@ -387,7 +399,8 @@ $migration_3_sql$;
+       ('EmployeeTimeEntry',ARRAY['id','employeeId','clockedInAt','clockedOutAt','clockOutReason']::text[],10),
+       ('CustomerAccount',ARRAY['id','phone','passwordHash','phoneVerifiedAt','sessionVersion','loginFailures','loginLockedUntil','createdAt','updatedAt']::text[],11),
+       ('CustomerAccessChallenge',ARRAY['id','customerId','appointmentId','purpose','codeHash','expiresAt','attempts','consumedAt','createdAt']::text[],11),
+-      ('CustomerAccessThrottle',ARRAY['key','windowStartedAt','requests','lastRequestedAt']::text[],11)
++      ('CustomerAccessThrottle',ARRAY['key','windowStartedAt','requests','lastRequestedAt']::text[],11),
++      ('ReceptionistRecord',ARRAY['id','kind','payload','expiresAt','createdAt']::text[],12)
+     )
+     SELECT 1 FROM expected WHERE stage<=applied_count AND (
+       to_regclass(format('public.%I',table_name)) IS NULL OR
+@@ -407,7 +420,8 @@ $migration_3_sql$;
+         || CASE WHEN applied_count>=7 THEN ARRAY['AdminCredential'] ELSE ARRAY[]::text[] END
+         || CASE WHEN applied_count>=9 THEN ARRAY['DisplayOrder'] ELSE ARRAY[]::text[] END
+         || CASE WHEN applied_count>=10 THEN ARRAY['EmployeeTimeEntry'] ELSE ARRAY[]::text[] END
+-        || CASE WHEN applied_count>=11 THEN ARRAY['CustomerAccount','CustomerAccessChallenge','CustomerAccessThrottle'] ELSE ARRAY[]::text[] END)
++        || CASE WHEN applied_count>=11 THEN ARRAY['CustomerAccount','CustomerAccessChallenge','CustomerAccessThrottle'] ELSE ARRAY[]::text[] END
++        || CASE WHEN applied_count>=12 THEN ARRAY['ReceptionistRecord'] ELSE ARRAY[]::text[] END)
+   ) THEN
+     RAISE EXCEPTION 'Setup stopped: application schema is missing, partial, or unexpected. Nothing was changed.';
+   END IF;
+@@ -486,7 +500,8 @@ $migration_4_sql$;
+       ('EmployeeTimeEntry',ARRAY['id','employeeId','clockedInAt','clockedOutAt','clockOutReason']::text[],10),
+       ('CustomerAccount',ARRAY['id','phone','passwordHash','phoneVerifiedAt','sessionVersion','loginFailures','loginLockedUntil','createdAt','updatedAt']::text[],11),
+       ('CustomerAccessChallenge',ARRAY['id','customerId','appointmentId','purpose','codeHash','expiresAt','attempts','consumedAt','createdAt']::text[],11),
+-      ('CustomerAccessThrottle',ARRAY['key','windowStartedAt','requests','lastRequestedAt']::text[],11)
++      ('CustomerAccessThrottle',ARRAY['key','windowStartedAt','requests','lastRequestedAt']::text[],11),
++      ('ReceptionistRecord',ARRAY['id','kind','payload','expiresAt','createdAt']::text[],12)
+     )
+     SELECT 1 FROM expected WHERE stage<=applied_count AND (
+       to_regclass(format('public.%I',table_name)) IS NULL OR
+@@ -506,7 +521,8 @@ $migration_4_sql$;
+         || CASE WHEN applied_count>=7 THEN ARRAY['AdminCredential'] ELSE ARRAY[]::text[] END
+         || CASE WHEN applied_count>=9 THEN ARRAY['DisplayOrder'] ELSE ARRAY[]::text[] END
+         || CASE WHEN applied_count>=10 THEN ARRAY['EmployeeTimeEntry'] ELSE ARRAY[]::text[] END
+-        || CASE WHEN applied_count>=11 THEN ARRAY['CustomerAccount','CustomerAccessChallenge','CustomerAccessThrottle'] ELSE ARRAY[]::text[] END)
++        || CASE WHEN applied_count>=11 THEN ARRAY['CustomerAccount','CustomerAccessChallenge','CustomerAccessThrottle'] ELSE ARRAY[]::text[] END
++        || CASE WHEN applied_count>=12 THEN ARRAY['ReceptionistRecord'] ELSE ARRAY[]::text[] END)
+   ) THEN
+     RAISE EXCEPTION 'Setup stopped: application schema is missing, partial, or unexpected. Nothing was changed.';
+   END IF;
+@@ -634,7 +650,8 @@ $migration_5_sql$;
+       ('EmployeeTimeEntry',ARRAY['id','employeeId','clockedInAt','clockedOutAt','clockOutReason']::text[],10),
+       ('CustomerAccount',ARRAY['id','phone','passwordHash','phoneVerifiedAt','sessionVersion','loginFailures','loginLockedUntil','createdAt','updatedAt']::text[],11),
+       ('CustomerAccessChallenge',ARRAY['id','customerId','appointmentId','purpose','codeHash','expiresAt','attempts','consumedAt','createdAt']::text[],11),
+-      ('CustomerAccessThrottle',ARRAY['key','windowStartedAt','requests','lastRequestedAt']::text[],11)
++      ('CustomerAccessThrottle',ARRAY['key','windowStartedAt','requests','lastRequestedAt']::text[],11),
++      ('ReceptionistRecord',ARRAY['id','kind','payload','expiresAt','createdAt']::text[],12)
+     )
+     SELECT 1 FROM expected WHERE stage<=applied_count AND (
+       to_regclass(format('public.%I',table_name)) IS NULL OR
+@@ -654,7 +671,8 @@ $migration_5_sql$;
+         || CASE WHEN applied_count>=7 THEN ARRAY['AdminCredential'] ELSE ARRAY[]::text[] END
+         || CASE WHEN applied_count>=9 THEN ARRAY['DisplayOrder'] ELSE ARRAY[]::text[] END
+         || CASE WHEN applied_count>=10 THEN ARRAY['EmployeeTimeEntry'] ELSE ARRAY[]::text[] END
+-        || CASE WHEN applied_count>=11 THEN ARRAY['CustomerAccount','CustomerAccessChallenge','CustomerAccessThrottle'] ELSE ARRAY[]::text[] END)
++        || CASE WHEN applied_count>=11 THEN ARRAY['CustomerAccount','CustomerAccessChallenge','CustomerAccessThrottle'] ELSE ARRAY[]::text[] END
++        || CASE WHEN applied_count>=12 THEN ARRAY['ReceptionistRecord'] ELSE ARRAY[]::text[] END)
+   ) THEN
+     RAISE EXCEPTION 'Setup stopped: application schema is missing, partial, or unexpected. Nothing was changed.';
+   END IF;
+@@ -774,7 +792,8 @@ $migration_6_sql$;
+       ('EmployeeTimeEntry',ARRAY['id','employeeId','clockedInAt','clockedOutAt','clockOutReason']::text[],10),
+       ('CustomerAccount',ARRAY['id','phone','passwordHash','phoneVerifiedAt','sessionVersion','loginFailures','loginLockedUntil','createdAt','updatedAt']::text[],11),
+       ('CustomerAccessChallenge',ARRAY['id','customerId','appointmentId','purpose','codeHash','expiresAt','attempts','consumedAt','createdAt']::text[],11),
+-      ('CustomerAccessThrottle',ARRAY['key','windowStartedAt','requests','lastRequestedAt']::text[],11)
++      ('CustomerAccessThrottle',ARRAY['key','windowStartedAt','requests','lastRequestedAt']::text[],11),
++      ('ReceptionistRecord',ARRAY['id','kind','payload','expiresAt','createdAt']::text[],12)
+     )
+     SELECT 1 FROM expected WHERE stage<=applied_count AND (
+       to_regclass(format('public.%I',table_name)) IS NULL OR
+@@ -794,7 +813,8 @@ $migration_6_sql$;
+         || CASE WHEN applied_count>=7 THEN ARRAY['AdminCredential'] ELSE ARRAY[]::text[] END
+         || CASE WHEN applied_count>=9 THEN ARRAY['DisplayOrder'] ELSE ARRAY[]::text[] END
+         || CASE WHEN applied_count>=10 THEN ARRAY['EmployeeTimeEntry'] ELSE ARRAY[]::text[] END
+-        || CASE WHEN applied_count>=11 THEN ARRAY['CustomerAccount','CustomerAccessChallenge','CustomerAccessThrottle'] ELSE ARRAY[]::text[] END)
++        || CASE WHEN applied_count>=11 THEN ARRAY['CustomerAccount','CustomerAccessChallenge','CustomerAccessThrottle'] ELSE ARRAY[]::text[] END
++        || CASE WHEN applied_count>=12 THEN ARRAY['ReceptionistRecord'] ELSE ARRAY[]::text[] END)
+   ) THEN
+     RAISE EXCEPTION 'Setup stopped: application schema is missing, partial, or unexpected. Nothing was changed.';
+   END IF;
+@@ -856,7 +876,8 @@ $migration_7_sql$;
+       ('EmployeeTimeEntry',ARRAY['id','employeeId','clockedInAt','clockedOutAt','clockOutReason']::text[],10),
+       ('CustomerAccount',ARRAY['id','phone','passwordHash','phoneVerifiedAt','sessionVersion','loginFailures','loginLockedUntil','createdAt','updatedAt']::text[],11),
+       ('CustomerAccessChallenge',ARRAY['id','customerId','appointmentId','purpose','codeHash','expiresAt','attempts','consumedAt','createdAt']::text[],11),
+-      ('CustomerAccessThrottle',ARRAY['key','windowStartedAt','requests','lastRequestedAt']::text[],11)
++      ('CustomerAccessThrottle',ARRAY['key','windowStartedAt','requests','lastRequestedAt']::text[],11),
++      ('ReceptionistRecord',ARRAY['id','kind','payload','expiresAt','createdAt']::text[],12)
+     )
+     SELECT 1 FROM expected WHERE stage<=applied_count AND (
+       to_regclass(format('public.%I',table_name)) IS NULL OR
+@@ -876,7 +897,8 @@ $migration_7_sql$;
+         || CASE WHEN applied_count>=7 THEN ARRAY['AdminCredential'] ELSE ARRAY[]::text[] END
+         || CASE WHEN applied_count>=9 THEN ARRAY['DisplayOrder'] ELSE ARRAY[]::text[] END
+         || CASE WHEN applied_count>=10 THEN ARRAY['EmployeeTimeEntry'] ELSE ARRAY[]::text[] END
+-        || CASE WHEN applied_count>=11 THEN ARRAY['CustomerAccount','CustomerAccessChallenge','CustomerAccessThrottle'] ELSE ARRAY[]::text[] END)
++        || CASE WHEN applied_count>=11 THEN ARRAY['CustomerAccount','CustomerAccessChallenge','CustomerAccessThrottle'] ELSE ARRAY[]::text[] END
++        || CASE WHEN applied_count>=12 THEN ARRAY['ReceptionistRecord'] ELSE ARRAY[]::text[] END)
+   ) THEN
+     RAISE EXCEPTION 'Setup stopped: application schema is missing, partial, or unexpected. Nothing was changed.';
+   END IF;
+@@ -936,7 +958,8 @@ $migration_8_sql$;
+       ('EmployeeTimeEntry',ARRAY['id','employeeId','clockedInAt','clockedOutAt','clockOutReason']::text[],10),
+       ('CustomerAccount',ARRAY['id','phone','passwordHash','phoneVerifiedAt','sessionVersion','loginFailures','loginLockedUntil','createdAt','updatedAt']::text[],11),
+       ('CustomerAccessChallenge',ARRAY['id','customerId','appointmentId','purpose','codeHash','expiresAt','attempts','consumedAt','createdAt']::text[],11),
+-      ('CustomerAccessThrottle',ARRAY['key','windowStartedAt','requests','lastRequestedAt']::text[],11)
++      ('CustomerAccessThrottle',ARRAY['key','windowStartedAt','requests','lastRequestedAt']::text[],11),
++      ('ReceptionistRecord',ARRAY['id','kind','payload','expiresAt','createdAt']::text[],12)
+     )
+     SELECT 1 FROM expected WHERE stage<=applied_count AND (
+       to_regclass(format('public.%I',table_name)) IS NULL OR
+@@ -956,7 +979,8 @@ $migration_8_sql$;
+         || CASE WHEN applied_count>=7 THEN ARRAY['AdminCredential'] ELSE ARRAY[]::text[] END
+         || CASE WHEN applied_count>=9 THEN ARRAY['DisplayOrder'] ELSE ARRAY[]::text[] END
+         || CASE WHEN applied_count>=10 THEN ARRAY['EmployeeTimeEntry'] ELSE ARRAY[]::text[] END
+-        || CASE WHEN applied_count>=11 THEN ARRAY['CustomerAccount','CustomerAccessChallenge','CustomerAccessThrottle'] ELSE ARRAY[]::text[] END)
++        || CASE WHEN applied_count>=11 THEN ARRAY['CustomerAccount','CustomerAccessChallenge','CustomerAccessThrottle'] ELSE ARRAY[]::text[] END
++        || CASE WHEN applied_count>=12 THEN ARRAY['ReceptionistRecord'] ELSE ARRAY[]::text[] END)
+   ) THEN
+     RAISE EXCEPTION 'Setup stopped: application schema is missing, partial, or unexpected. Nothing was changed.';
+   END IF;
+@@ -1016,7 +1040,8 @@ $migration_9_sql$;
+       ('EmployeeTimeEntry',ARRAY['id','employeeId','clockedInAt','clockedOutAt','clockOutReason']::text[],10),
+       ('CustomerAccount',ARRAY['id','phone','passwordHash','phoneVerifiedAt','sessionVersion','loginFailures','loginLockedUntil','createdAt','updatedAt']::text[],11),
+       ('CustomerAccessChallenge',ARRAY['id','customerId','appointmentId','purpose','codeHash','expiresAt','attempts','consumedAt','createdAt']::text[],11),
+-      ('CustomerAccessThrottle',ARRAY['key','windowStartedAt','requests','lastRequestedAt']::text[],11)
++      ('CustomerAccessThrottle',ARRAY['key','windowStartedAt','requests','lastRequestedAt']::text[],11),
++      ('ReceptionistRecord',ARRAY['id','kind','payload','expiresAt','createdAt']::text[],12)
+     )
+     SELECT 1 FROM expected WHERE stage<=applied_count AND (
+       to_regclass(format('public.%I',table_name)) IS NULL OR
+@@ -1036,7 +1061,8 @@ $migration_9_sql$;
+         || CASE WHEN applied_count>=7 THEN ARRAY['AdminCredential'] ELSE ARRAY[]::text[] END
+         || CASE WHEN applied_count>=9 THEN ARRAY['DisplayOrder'] ELSE ARRAY[]::text[] END
+         || CASE WHEN applied_count>=10 THEN ARRAY['EmployeeTimeEntry'] ELSE ARRAY[]::text[] END
+-        || CASE WHEN applied_count>=11 THEN ARRAY['CustomerAccount','CustomerAccessChallenge','CustomerAccessThrottle'] ELSE ARRAY[]::text[] END)
++        || CASE WHEN applied_count>=11 THEN ARRAY['CustomerAccount','CustomerAccessChallenge','CustomerAccessThrottle'] ELSE ARRAY[]::text[] END
++        || CASE WHEN applied_count>=12 THEN ARRAY['ReceptionistRecord'] ELSE ARRAY[]::text[] END)
+   ) THEN
+     RAISE EXCEPTION 'Setup stopped: application schema is missing, partial, or unexpected. Nothing was changed.';
+   END IF;
+@@ -1106,7 +1132,8 @@ $migration_10_sql$;
+       ('EmployeeTimeEntry',ARRAY['id','employeeId','clockedInAt','clockedOutAt','clockOutReason']::text[],10),
+       ('CustomerAccount',ARRAY['id','phone','passwordHash','phoneVerifiedAt','sessionVersion','loginFailures','loginLockedUntil','createdAt','updatedAt']::text[],11),
+       ('CustomerAccessChallenge',ARRAY['id','customerId','appointmentId','purpose','codeHash','expiresAt','attempts','consumedAt','createdAt']::text[],11),
+-      ('CustomerAccessThrottle',ARRAY['key','windowStartedAt','requests','lastRequestedAt']::text[],11)
++      ('CustomerAccessThrottle',ARRAY['key','windowStartedAt','requests','lastRequestedAt']::text[],11),
++      ('ReceptionistRecord',ARRAY['id','kind','payload','expiresAt','createdAt']::text[],12)
+     )
+     SELECT 1 FROM expected WHERE stage<=applied_count AND (
+       to_regclass(format('public.%I',table_name)) IS NULL OR
+@@ -1126,7 +1153,8 @@ $migration_10_sql$;
+         || CASE WHEN applied_count>=7 THEN ARRAY['AdminCredential'] ELSE ARRAY[]::text[] END
+         || CASE WHEN applied_count>=9 THEN ARRAY['DisplayOrder'] ELSE ARRAY[]::text[] END
+         || CASE WHEN applied_count>=10 THEN ARRAY['EmployeeTimeEntry'] ELSE ARRAY[]::text[] END
+-        || CASE WHEN applied_count>=11 THEN ARRAY['CustomerAccount','CustomerAccessChallenge','CustomerAccessThrottle'] ELSE ARRAY[]::text[] END)
++        || CASE WHEN applied_count>=11 THEN ARRAY['CustomerAccount','CustomerAccessChallenge','CustomerAccessThrottle'] ELSE ARRAY[]::text[] END
++        || CASE WHEN applied_count>=12 THEN ARRAY['ReceptionistRecord'] ELSE ARRAY[]::text[] END)
+   ) THEN
+     RAISE EXCEPTION 'Setup stopped: application schema is missing, partial, or unexpected. Nothing was changed.';
+   END IF;
+@@ -1265,7 +1293,86 @@ $migration_11_sql$;
+       ('EmployeeTimeEntry',ARRAY['id','employeeId','clockedInAt','clockedOutAt','clockOutReason']::text[],10),
+       ('CustomerAccount',ARRAY['id','phone','passwordHash','phoneVerifiedAt','sessionVersion','loginFailures','loginLockedUntil','createdAt','updatedAt']::text[],11),
+       ('CustomerAccessChallenge',ARRAY['id','customerId','appointmentId','purpose','codeHash','expiresAt','attempts','consumedAt','createdAt']::text[],11),
+-      ('CustomerAccessThrottle',ARRAY['key','windowStartedAt','requests','lastRequestedAt']::text[],11)
++      ('CustomerAccessThrottle',ARRAY['key','windowStartedAt','requests','lastRequestedAt']::text[],11),
++      ('ReceptionistRecord',ARRAY['id','kind','payload','expiresAt','createdAt']::text[],12)
++    )
++    SELECT 1 FROM expected WHERE stage<=applied_count AND (
++      to_regclass(format('public.%I',table_name)) IS NULL OR
++      ARRAY(SELECT item FROM unnest(column_names) AS cols(item) ORDER BY item)<>
++      ARRAY(SELECT attname::text FROM pg_attribute
++        WHERE attrelid=to_regclass(format('public.%I',table_name)) AND attnum>0 AND NOT attisdropped ORDER BY attname::text)
++    )
++  ) OR EXISTS (
++    SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
++    WHERE n.nspname='public' AND c.relkind IN ('r','p') AND c.relname<>'_prisma_migrations'
++      AND c.relname<>ALL(ARRAY['Category','Brand','DeviceModel','RepairService','Offering','Appointment','BusinessHour','Block','BookingLock']
++        || CASE WHEN applied_count>=2 THEN ARRAY['Location','LocationBusinessHour'] ELSE ARRAY[]::text[] END
++        || CASE WHEN applied_count>=3 THEN ARRAY['ModelImage'] ELSE ARRAY[]::text[] END
++        || CASE WHEN applied_count>=4 THEN ARRAY['PreRepairQuestion','AppointmentPreRepairAnswer'] ELSE ARRAY[]::text[] END
++        || CASE WHEN applied_count>=5 THEN ARRAY['Employee','EmployeeLocation','NotificationDelivery'] ELSE ARRAY[]::text[] END
++        || CASE WHEN applied_count>=6 THEN ARRAY['AppointmentPhoto','PaymentMethod','AppointmentCheckout'] ELSE ARRAY[]::text[] END
++        || CASE WHEN applied_count>=7 THEN ARRAY['AdminCredential'] ELSE ARRAY[]::text[] END
++        || CASE WHEN applied_count>=9 THEN ARRAY['DisplayOrder'] ELSE ARRAY[]::text[] END
++        || CASE WHEN applied_count>=10 THEN ARRAY['EmployeeTimeEntry'] ELSE ARRAY[]::text[] END
++        || CASE WHEN applied_count>=11 THEN ARRAY['CustomerAccount','CustomerAccessChallenge','CustomerAccessThrottle'] ELSE ARRAY[]::text[] END
++        || CASE WHEN applied_count>=12 THEN ARRAY['ReceptionistRecord'] ELSE ARRAY[]::text[] END)
++  ) THEN
++    RAISE EXCEPTION 'Setup stopped: application schema is missing, partial, or unexpected. Nothing was changed.';
++  END IF;
++  END IF;
++  IF applied_count<12 THEN
++    -- Acquire the application's write lock before taking any application DDL
++    -- locks. Old deployments also lock BookingLock before touching bookings.
++    UPDATE "BookingLock" SET "revision"="revision"+1 WHERE "id"=1;
++    IF NOT FOUND THEN
++      RAISE EXCEPTION 'Setup stopped: the shared booking lock is missing. Nothing was changed.';
++    END IF;
++    -- Execute the exact migration bytes recorded by Prisma.
++    EXECUTE $migration_12_sql$
++CREATE TABLE "ReceptionistRecord" (
++ "id" TEXT NOT NULL PRIMARY KEY,
++ "kind" TEXT NOT NULL,
++ "payload" JSONB NOT NULL,
++ "expiresAt" TIMESTAMP(3),
++ "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
++);
++CREATE INDEX "ReceptionistRecord_kind_expiresAt_idx" ON "ReceptionistRecord"("kind","expiresAt");
++$migration_12_sql$;
++    INSERT INTO "_prisma_migrations"
++      ("id","checksum","finished_at","migration_name","started_at","applied_steps_count")
++    VALUES (gen_random_uuid()::text,'fc830034208a6dd3310d31e3da889dc7fed28fc61fa49e19babb814733921362',now(),'20261023010000_receptionist_integration',now(),1);
++    applied_count=12;
++
++  -- Refuse a partially applied or unrelated schema, even if ledger rows exist.
++  IF EXISTS (
++    WITH expected(table_name,column_names,stage) AS (VALUES
++      ('Category',ARRAY['id','name']::text[],1),
++      ('Brand',ARRAY['id','name','categoryId']::text[],1),
++      ('DeviceModel',ARRAY['id','name','brandId']::text[] || CASE WHEN applied_count>=3 THEN ARRAY['sortOrder']::text[] ELSE ARRAY[]::text[] END,1),
++      ('RepairService',ARRAY['id','name','description']::text[],1),
++      ('Offering',ARRAY['id','modelId','serviceId','price','duration']::text[],1),
++      ('Appointment',ARRAY['id','offeringId','firstName','lastName','email','phone','notes','start','end','price','duration','status','createdAt']::text[] || CASE WHEN applied_count>=2 THEN ARRAY['locationId']::text[] ELSE ARRAY[]::text[] END || CASE WHEN applied_count>=5 THEN ARRAY['manageKey','smsConsent','notificationRevision']::text[] ELSE ARRAY[]::text[] END || CASE WHEN applied_count>=6 THEN ARRAY['createdByRole','createdByEmployeeId','checkedInAt','checkedInByRole','checkedInByEmployeeId']::text[] ELSE ARRAY[]::text[] END || CASE WHEN applied_count>=11 THEN ARRAY['ticketNumber','customerId','customerLinkedAt','customerRecordsReleasedAt','portalPhone','portalEligible']::text[] ELSE ARRAY[]::text[] END,1),
++      ('BusinessHour',ARRAY['day','open','close','enabled']::text[],1),
++      ('Block',ARRAY['id','start','end','reason']::text[] || CASE WHEN applied_count>=2 THEN ARRAY['locationId']::text[] ELSE ARRAY[]::text[] END,1),
++      ('BookingLock',ARRAY['id','revision']::text[],1),
++      ('Location',ARRAY['id','name','address','timeZone','enabled']::text[],2),
++      ('LocationBusinessHour',ARRAY['locationId','day','open','close','enabled']::text[],2),
++      ('ModelImage',ARRAY['modelId','dataBytes','mimeType','version','updatedAt']::text[],3),
++      ('PreRepairQuestion',ARRAY['id','categoryId','question','enabled','required','sortOrder','archived','updatedAt']::text[],4),
++      ('AppointmentPreRepairAnswer',ARRAY['id','appointmentId','questionId','question','answer','sortOrder']::text[],4),
++      ('Employee',ARRAY['id','name','email','phone','enabled','emailAlerts','smsAlerts','createdAt','updatedAt']::text[] || CASE WHEN applied_count>=6 THEN ARRAY['username','passwordHash','loginEnabled','sessionVersion','loginFailures','loginLockedUntil']::text[] ELSE ARRAY[]::text[] END,5),
++      ('EmployeeLocation',ARRAY['employeeId','locationId']::text[],5),
++      ('NotificationDelivery',ARRAY['id','appointmentId','event','revision','channel','audience','employeeId','target','payload','status','attempts','lastError','providerId','nextAttemptAt','lockedAt','firstAttemptAt','claimToken','sentAt','createdAt','updatedAt']::text[],5),
++      ('AppointmentPhoto',ARRAY['id','appointmentId','phase','dataBytes','mimeType','uploaderRole','uploaderEmployeeId','createdAt']::text[],6),
++      ('PaymentMethod',ARRAY['id','name','enabled','createdAt','updatedAt']::text[] || CASE WHEN applied_count>=8 THEN ARRAY['sortOrder']::text[] ELSE ARRAY[]::text[] END,6),
++      ('AppointmentCheckout',ARRAY['appointmentId','amount','paymentMethodId','paymentMethodName','recordedByRole','recordedByEmployeeId','notes','createdAt']::text[] || CASE WHEN applied_count>=11 THEN ARRAY['servicePerformed','technicianName']::text[] ELSE ARRAY[]::text[] END,6),
++      ('AdminCredential',ARRAY['id','passwordHash','sessionVersion','updatedAt']::text[],7),
++      ('DisplayOrder',ARRAY['scope','itemIds','revision','updatedAt']::text[],9),
++      ('EmployeeTimeEntry',ARRAY['id','employeeId','clockedInAt','clockedOutAt','clockOutReason']::text[],10),
++      ('CustomerAccount',ARRAY['id','phone','passwordHash','phoneVerifiedAt','sessionVersion','loginFailures','loginLockedUntil','createdAt','updatedAt']::text[],11),
++      ('CustomerAccessChallenge',ARRAY['id','customerId','appointmentId','purpose','codeHash','expiresAt','attempts','consumedAt','createdAt']::text[],11),
++      ('CustomerAccessThrottle',ARRAY['key','windowStartedAt','requests','lastRequestedAt']::text[],11),
++      ('ReceptionistRecord',ARRAY['id','kind','payload','expiresAt','createdAt']::text[],12)
+     )
+     SELECT 1 FROM expected WHERE stage<=applied_count AND (
+       to_regclass(format('public.%I',table_name)) IS NULL OR
+@@ -1285,7 +1392,8 @@ $migration_11_sql$;
+         || CASE WHEN applied_count>=7 THEN ARRAY['AdminCredential'] ELSE ARRAY[]::text[] END
+         || CASE WHEN applied_count>=9 THEN ARRAY['DisplayOrder'] ELSE ARRAY[]::text[] END
+         || CASE WHEN applied_count>=10 THEN ARRAY['EmployeeTimeEntry'] ELSE ARRAY[]::text[] END
+-        || CASE WHEN applied_count>=11 THEN ARRAY['CustomerAccount','CustomerAccessChallenge','CustomerAccessThrottle'] ELSE ARRAY[]::text[] END)
++        || CASE WHEN applied_count>=11 THEN ARRAY['CustomerAccount','CustomerAccessChallenge','CustomerAccessThrottle'] ELSE ARRAY[]::text[] END
++        || CASE WHEN applied_count>=12 THEN ARRAY['ReceptionistRecord'] ELSE ARRAY[]::text[] END)
+   ) THEN
+     RAISE EXCEPTION 'Setup stopped: application schema is missing, partial, or unexpected. Nothing was changed.';
+   END IF;
+diff --git a/prisma/neon-setup.sql b/prisma/neon-setup.sql
+index adca343..b663ae4 100644
+--- a/prisma/neon-setup.sql
++++ b/prisma/neon-setup.sql
+@@ -47,6 +47,8 @@
+ -- Exact source SHA256: 632670d04975b60e4fc9044e5aa97a1ded06531eea4f81e4d77f93031f723109
+ -- Migration: 20261021030000_customer_portal
+ -- Exact source SHA256: 04b8c2e39c96883dd69c1c734bfb6e49c3d270e455c2e6399ade52add2e15ae8
++-- Migration: 20261023010000_receptionist_integration
++-- Exact source SHA256: fc830034208a6dd3310d31e3da889dc7fed28fc61fa49e19babb814733921362
+ BEGIN;
+ SET LOCAL search_path=public;
+ SET LOCAL timezone='UTC';
+@@ -68,8 +70,8 @@ DO $bootstrap$
+ DECLARE history_count INTEGER; applied_count INTEGER;
+ BEGIN
+   SELECT count(*) INTO history_count FROM "_prisma_migrations";
+-  IF history_count<0 OR history_count>11 THEN
+-    RAISE EXCEPTION 'Setup stopped: expected empty, baseline, location, model presentation, pre-repair question, employee notification, staff repair checkout, admin credential, payment method order, display order, employee time clock, or customer portal migration history. Nothing was changed.';
++  IF history_count<0 OR history_count>12 THEN
++    RAISE EXCEPTION 'Setup stopped: expected empty, baseline, location, model presentation, pre-repair question, employee notification, staff repair checkout, admin credential, payment method order, display order, employee time clock, customer portal, or receptionist integration migration history. Nothing was changed.';
+   END IF;
+   IF history_count>=1 AND (
+     SELECT count(*) FROM "_prisma_migrations" WHERE "migration_name"='20261006230000_postgresql_init' AND "checksum"='e1c5adc7f08539c54961221b1cc4275f9c2bb2a02e9d0fdcb503015b0e09a3fe'
+@@ -137,6 +139,12 @@ BEGIN
+   )<>1 THEN
+     RAISE EXCEPTION 'Setup stopped: migration history is incomplete, unexpected, or differs from this script. Nothing was changed.';
+   END IF;
++  IF history_count>=12 AND (
++    SELECT count(*) FROM "_prisma_migrations" WHERE "migration_name"='20261023010000_receptionist_integration' AND "checksum"='fc830034208a6dd3310d31e3da889dc7fed28fc61fa49e19babb814733921362'
++      AND "finished_at" IS NOT NULL AND "rolled_back_at" IS NULL
++  )<>1 THEN
++    RAISE EXCEPTION 'Setup stopped: migration history is incomplete, unexpected, or differs from this script. Nothing was changed.';
++  END IF;
+   applied_count=history_count;
+   IF applied_count=0 THEN
+     IF EXISTS (
+@@ -175,7 +183,8 @@ BEGIN
+       ('EmployeeTimeEntry',ARRAY['id','employeeId','clockedInAt','clockedOutAt','clockOutReason']::text[],10),
+       ('CustomerAccount',ARRAY['id','phone','passwordHash','phoneVerifiedAt','sessionVersion','loginFailures','loginLockedUntil','createdAt','updatedAt']::text[],11),
+       ('CustomerAccessChallenge',ARRAY['id','customerId','appointmentId','purpose','codeHash','expiresAt','attempts','consumedAt','createdAt']::text[],11),
+-      ('CustomerAccessThrottle',ARRAY['key','windowStartedAt','requests','lastRequestedAt']::text[],11)
++      ('CustomerAccessThrottle',ARRAY['key','windowStartedAt','requests','lastRequestedAt']::text[],11),
++      ('ReceptionistRecord',ARRAY['id','kind','payload','expiresAt','createdAt']::text[],12)
+     )
+     SELECT 1 FROM expected WHERE stage<=applied_count AND (
+       to_regclass(format('public.%I',table_name)) IS NULL OR
+@@ -195,7 +204,8 @@ BEGIN
+         || CASE WHEN applied_count>=7 THEN ARRAY['AdminCredential'] ELSE ARRAY[]::text[] END
+         || CASE WHEN applied_count>=9 THEN ARRAY['DisplayOrder'] ELSE ARRAY[]::text[] END
+         || CASE WHEN applied_count>=10 THEN ARRAY['EmployeeTimeEntry'] ELSE ARRAY[]::text[] END
+-        || CASE WHEN applied_count>=11 THEN ARRAY['CustomerAccount','CustomerAccessChallenge','CustomerAccessThrottle'] ELSE ARRAY[]::text[] END)
++        || CASE WHEN applied_count>=11 THEN ARRAY['CustomerAccount','CustomerAccessChallenge','CustomerAccessThrottle'] ELSE ARRAY[]::text[] END
++        || CASE WHEN applied_count>=12 THEN ARRAY['ReceptionistRecord'] ELSE ARRAY[]::text[] END)
+   ) THEN
+     RAISE EXCEPTION 'Setup stopped: application schema is missing, partial, or unexpected. Nothing was changed.';
+   END IF;
+@@ -366,7 +376,8 @@ $migration_1_sql$;
+       ('EmployeeTimeEntry',ARRAY['id','employeeId','clockedInAt','clockedOutAt','clockOutReason']::text[],10),
+       ('CustomerAccount',ARRAY['id','phone','passwordHash','phoneVerifiedAt','sessionVersion','loginFailures','loginLockedUntil','createdAt','updatedAt']::text[],11),
+       ('CustomerAccessChallenge',ARRAY['id','customerId','appointmentId','purpose','codeHash','expiresAt','attempts','consumedAt','createdAt']::text[],11),
+-      ('CustomerAccessThrottle',ARRAY['key','windowStartedAt','requests','lastRequestedAt']::text[],11)
++      ('CustomerAccessThrottle',ARRAY['key','windowStartedAt','requests','lastRequestedAt']::text[],11),
++      ('ReceptionistRecord',ARRAY['id','kind','payload','expiresAt','createdAt']::text[],12)
+     )
+     SELECT 1 FROM expected WHERE stage<=applied_count AND (
+       to_regclass(format('public.%I',table_name)) IS NULL OR
+@@ -386,7 +397,8 @@ $migration_1_sql$;
+         || CASE WHEN applied_count>=7 THEN ARRAY['AdminCredential'] ELSE ARRAY[]::text[] END
+         || CASE WHEN applied_count>=9 THEN ARRAY['DisplayOrder'] ELSE ARRAY[]::text[] END
+         || CASE WHEN applied_count>=10 THEN ARRAY['EmployeeTimeEntry'] ELSE ARRAY[]::text[] END
+-        || CASE WHEN applied_count>=11 THEN ARRAY['CustomerAccount','CustomerAccessChallenge','CustomerAccessThrottle'] ELSE ARRAY[]::text[] END)
++        || CASE WHEN applied_count>=11 THEN ARRAY['CustomerAccount','CustomerAccessChallenge','CustomerAccessThrottle'] ELSE ARRAY[]::text[] END
++        || CASE WHEN applied_count>=12 THEN ARRAY['ReceptionistRecord'] ELSE ARRAY[]::text[] END)
+   ) THEN
+     RAISE EXCEPTION 'Setup stopped: application schema is missing, partial, or unexpected. Nothing was changed.';
+   END IF;
+@@ -482,7 +494,8 @@ $migration_2_sql$;
+       ('EmployeeTimeEntry',ARRAY['id','employeeId','clockedInAt','clockedOutAt','clockOutReason']::text[],10),
+       ('CustomerAccount',ARRAY['id','phone','passwordHash','phoneVerifiedAt','sessionVersion','loginFailures','loginLockedUntil','createdAt','updatedAt']::text[],11),
+       ('CustomerAccessChallenge',ARRAY['id','customerId','appointmentId','purpose','codeHash','expiresAt','attempts','consumedAt','createdAt']::text[],11),
+-      ('CustomerAccessThrottle',ARRAY['key','windowStartedAt','requests','lastRequestedAt']::text[],11)
++      ('CustomerAccessThrottle',ARRAY['key','windowStartedAt','requests','lastRequestedAt']::text[],11),
++      ('ReceptionistRecord',ARRAY['id','kind','payload','expiresAt','createdAt']::text[],12)
+     )
+     SELECT 1 FROM expected WHERE stage<=applied_count AND (
+       to_regclass(format('public.%I',table_name)) IS NULL OR
+@@ -502,7 +515,8 @@ $migration_2_sql$;
+         || CASE WHEN applied_count>=7 THEN ARRAY['AdminCredential'] ELSE ARRAY[]::text[] END
+         || CASE WHEN applied_count>=9 THEN ARRAY['DisplayOrder'] ELSE ARRAY[]::text[] END
+         || CASE WHEN applied_count>=10 THEN ARRAY['EmployeeTimeEntry'] ELSE ARRAY[]::text[] END
+-        || CASE WHEN applied_count>=11 THEN ARRAY['CustomerAccount','CustomerAccessChallenge','CustomerAccessThrottle'] ELSE ARRAY[]::text[] END)
++        || CASE WHEN applied_count>=11 THEN ARRAY['CustomerAccount','CustomerAccessChallenge','CustomerAccessThrottle'] ELSE ARRAY[]::text[] END
++        || CASE WHEN applied_count>=12 THEN ARRAY['ReceptionistRecord'] ELSE ARRAY[]::text[] END)
+   ) THEN
+     RAISE EXCEPTION 'Setup stopped: application schema is missing, partial, or unexpected. Nothing was changed.';
+   END IF;
+@@ -579,7 +593,8 @@ $migration_3_sql$;
+       ('EmployeeTimeEntry',ARRAY['id','employeeId','clockedInAt','clockedOutAt','clockOutReason']::text[],10),
+       ('CustomerAccount',ARRAY['id','phone','passwordHash','phoneVerifiedAt','sessionVersion','loginFailures','loginLockedUntil','createdAt','updatedAt']::text[],11),
+       ('CustomerAccessChallenge',ARRAY['id','customerId','appointmentId','purpose','codeHash','expiresAt','attempts','consumedAt','createdAt']::text[],11),
+-      ('CustomerAccessThrottle',ARRAY['key','windowStartedAt','requests','lastRequestedAt']::text[],11)
++      ('CustomerAccessThrottle',ARRAY['key','windowStartedAt','requests','lastRequestedAt']::text[],11),
++      ('ReceptionistRecord',ARRAY['id','kind','payload','expiresAt','createdAt']::text[],12)
+     )
+     SELECT 1 FROM expected WHERE stage<=applied_count AND (
+       to_regclass(format('public.%I',table_name)) IS NULL OR
+@@ -599,7 +614,8 @@ $migration_3_sql$;
+         || CASE WHEN applied_count>=7 THEN ARRAY['AdminCredential'] ELSE ARRAY[]::text[] END
+         || CASE WHEN applied_count>=9 THEN ARRAY['DisplayOrder'] ELSE ARRAY[]::text[] END
+         || CASE WHEN applied_count>=10 THEN ARRAY['EmployeeTimeEntry'] ELSE ARRAY[]::text[] END
+-        || CASE WHEN applied_count>=11 THEN ARRAY['CustomerAccount','CustomerAccessChallenge','CustomerAccessThrottle'] ELSE ARRAY[]::text[] END)
++        || CASE WHEN applied_count>=11 THEN ARRAY['CustomerAccount','CustomerAccessChallenge','CustomerAccessThrottle'] ELSE ARRAY[]::text[] END
++        || CASE WHEN applied_count>=12 THEN ARRAY['ReceptionistRecord'] ELSE ARRAY[]::text[] END)
+   ) THEN
+     RAISE EXCEPTION 'Setup stopped: application schema is missing, partial, or unexpected. Nothing was changed.';
+   END IF;
+@@ -678,7 +694,8 @@ $migration_4_sql$;
+       ('EmployeeTimeEntry',ARRAY['id','employeeId','clockedInAt','clockedOutAt','clockOutReason']::text[],10),
+       ('CustomerAccount',ARRAY['id','phone','passwordHash','phoneVerifiedAt','sessionVersion','loginFailures','loginLockedUntil','createdAt','updatedAt']::text[],11),
+       ('CustomerAccessChallenge',ARRAY['id','customerId','appointmentId','purpose','codeHash','expiresAt','attempts','consumedAt','createdAt']::text[],11),
+-      ('CustomerAccessThrottle',ARRAY['key','windowStartedAt','requests','lastRequestedAt']::text[],11)
++      ('CustomerAccessThrottle',ARRAY['key','windowStartedAt','requests','lastRequestedAt']::text[],11),
++      ('ReceptionistRecord',ARRAY['id','kind','payload','expiresAt','createdAt']::text[],12)
+     )
+     SELECT 1 FROM expected WHERE stage<=applied_count AND (
+       to_regclass(format('public.%I',table_name)) IS NULL OR
+@@ -698,7 +715,8 @@ $migration_4_sql$;
+         || CASE WHEN applied_count>=7 THEN ARRAY['AdminCredential'] ELSE ARRAY[]::text[] END
+         || CASE WHEN applied_count>=9 THEN ARRAY['DisplayOrder'] ELSE ARRAY[]::text[] END
+         || CASE WHEN applied_count>=10 THEN ARRAY['EmployeeTimeEntry'] ELSE ARRAY[]::text[] END
+-        || CASE WHEN applied_count>=11 THEN ARRAY['CustomerAccount','CustomerAccessChallenge','CustomerAccessThrottle'] ELSE ARRAY[]::text[] END)
++        || CASE WHEN applied_count>=11 THEN ARRAY['CustomerAccount','CustomerAccessChallenge','CustomerAccessThrottle'] ELSE ARRAY[]::text[] END
++        || CASE WHEN applied_count>=12 THEN ARRAY['ReceptionistRecord'] ELSE ARRAY[]::text[] END)
+   ) THEN
+     RAISE EXCEPTION 'Setup stopped: application schema is missing, partial, or unexpected. Nothing was changed.';
+   END IF;
+@@ -826,7 +844,8 @@ $migration_5_sql$;
+       ('EmployeeTimeEntry',ARRAY['id','employeeId','clockedInAt','clockedOutAt','clockOutReason']::text[],10),
+       ('CustomerAccount',ARRAY['id','phone','passwordHash','phoneVerifiedAt','sessionVersion','loginFailures','loginLockedUntil','createdAt','updatedAt']::text[],11),
+       ('CustomerAccessChallenge',ARRAY['id','customerId','appointmentId','purpose','codeHash','expiresAt','attempts','consumedAt','createdAt']::text[],11),
+-      ('CustomerAccessThrottle',ARRAY['key','windowStartedAt','requests','lastRequestedAt']::text[],11)
++      ('CustomerAccessThrottle',ARRAY['key','windowStartedAt','requests','lastRequestedAt']::text[],11),
++      ('ReceptionistRecord',ARRAY['id','kind','payload','expiresAt','createdAt']::text[],12)
+     )
+     SELECT 1 FROM expected WHERE stage<=applied_count AND (
+       to_regclass(format('public.%I',table_name)) IS NULL OR
+@@ -846,7 +865,8 @@ $migration_5_sql$;
+         || CASE WHEN applied_count>=7 THEN ARRAY['AdminCredential'] ELSE ARRAY[]::text[] END
+         || CASE WHEN applied_count>=9 THEN ARRAY['DisplayOrder'] ELSE ARRAY[]::text[] END
+         || CASE WHEN applied_count>=10 THEN ARRAY['EmployeeTimeEntry'] ELSE ARRAY[]::text[] END
+-        || CASE WHEN applied_count>=11 THEN ARRAY['CustomerAccount','CustomerAccessChallenge','CustomerAccessThrottle'] ELSE ARRAY[]::text[] END)
++        || CASE WHEN applied_count>=11 THEN ARRAY['CustomerAccount','CustomerAccessChallenge','CustomerAccessThrottle'] ELSE ARRAY[]::text[] END
++        || CASE WHEN applied_count>=12 THEN ARRAY['ReceptionistRecord'] ELSE ARRAY[]::text[] END)
+   ) THEN
+     RAISE EXCEPTION 'Setup stopped: application schema is missing, partial, or unexpected. Nothing was changed.';
+   END IF;
+@@ -966,7 +986,8 @@ $migration_6_sql$;
+       ('EmployeeTimeEntry',ARRAY['id','employeeId','clockedInAt','clockedOutAt','clockOutReason']::text[],10),
+       ('CustomerAccount',ARRAY['id','phone','passwordHash','phoneVerifiedAt','sessionVersion','loginFailures','loginLockedUntil','createdAt','updatedAt']::text[],11),
+       ('CustomerAccessChallenge',ARRAY['id','customerId','appointmentId','purpose','codeHash','expiresAt','attempts','consumedAt','createdAt']::text[],11),
+-      ('CustomerAccessThrottle',ARRAY['key','windowStartedAt','requests','lastRequestedAt']::text[],11)
++      ('CustomerAccessThrottle',ARRAY['key','windowStartedAt','requests','lastRequestedAt']::text[],11),
++      ('ReceptionistRecord',ARRAY['id','kind','payload','expiresAt','createdAt']::text[],12)
+     )
+     SELECT 1 FROM expected WHERE stage<=applied_count AND (
+       to_regclass(format('public.%I',table_name)) IS NULL OR
+@@ -986,7 +1007,8 @@ $migration_6_sql$;
+         || CASE WHEN applied_count>=7 THEN ARRAY['AdminCredential'] ELSE ARRAY[]::text[] END
+         || CASE WHEN applied_count>=9 THEN ARRAY['DisplayOrder'] ELSE ARRAY[]::text[] END
+         || CASE WHEN applied_count>=10 THEN ARRAY['EmployeeTimeEntry'] ELSE ARRAY[]::text[] END
+-        || CASE WHEN applied_count>=11 THEN ARRAY['CustomerAccount','CustomerAccessChallenge','CustomerAccessThrottle'] ELSE ARRAY[]::text[] END)
++        || CASE WHEN applied_count>=11 THEN ARRAY['CustomerAccount','CustomerAccessChallenge','CustomerAccessThrottle'] ELSE ARRAY[]::text[] END
++        || CASE WHEN applied_count>=12 THEN ARRAY['ReceptionistRecord'] ELSE ARRAY[]::text[] END)
+   ) THEN
+     RAISE EXCEPTION 'Setup stopped: application schema is missing, partial, or unexpected. Nothing was changed.';
+   END IF;
+@@ -1048,7 +1070,8 @@ $migration_7_sql$;
+       ('EmployeeTimeEntry',ARRAY['id','employeeId','clockedInAt','clockedOutAt','clockOutReason']::text[],10),
+       ('CustomerAccount',ARRAY['id','phone','passwordHash','phoneVerifiedAt','sessionVersion','loginFailures','loginLockedUntil','createdAt','updatedAt']::text[],11),
+       ('CustomerAccessChallenge',ARRAY['id','customerId','appointmentId','purpose','codeHash','expiresAt','attempts','consumedAt','createdAt']::text[],11),
+-      ('CustomerAccessThrottle',ARRAY['key','windowStartedAt','requests','lastRequestedAt']::text[],11)
++      ('CustomerAccessThrottle',ARRAY['key','windowStartedAt','requests','lastRequestedAt']::text[],11),
++      ('ReceptionistRecord',ARRAY['id','kind','payload','expiresAt','createdAt']::text[],12)
+     )
+     SELECT 1 FROM expected WHERE stage<=applied_count AND (
+       to_regclass(format('public.%I',table_name)) IS NULL OR
+@@ -1068,7 +1091,8 @@ $migration_7_sql$;
+         || CASE WHEN applied_count>=7 THEN ARRAY['AdminCredential'] ELSE ARRAY[]::text[] END
+         || CASE WHEN applied_count>=9 THEN ARRAY['DisplayOrder'] ELSE ARRAY[]::text[] END
+         || CASE WHEN applied_count>=10 THEN ARRAY['EmployeeTimeEntry'] ELSE ARRAY[]::text[] END
+-        || CASE WHEN applied_count>=11 THEN ARRAY['CustomerAccount','CustomerAccessChallenge','CustomerAccessThrottle'] ELSE ARRAY[]::text[] END)
++        || CASE WHEN applied_count>=11 THEN ARRAY['CustomerAccount','CustomerAccessChallenge','CustomerAccessThrottle'] ELSE ARRAY[]::text[] END
++        || CASE WHEN applied_count>=12 THEN ARRAY['ReceptionistRecord'] ELSE ARRAY[]::text[] END)
+   ) THEN
+     RAISE EXCEPTION 'Setup stopped: application schema is missing, partial, or unexpected. Nothing was changed.';
+   END IF;
+@@ -1128,7 +1152,8 @@ $migration_8_sql$;
+       ('EmployeeTimeEntry',ARRAY['id','employeeId','clockedInAt','clockedOutAt','clockOutReason']::text[],10),
+       ('CustomerAccount',ARRAY['id','phone','passwordHash','phoneVerifiedAt','sessionVersion','loginFailures','loginLockedUntil','createdAt','updatedAt']::text[],11),
+       ('CustomerAccessChallenge',ARRAY['id','customerId','appointmentId','purpose','codeHash','expiresAt','attempts','consumedAt','createdAt']::text[],11),
+-      ('CustomerAccessThrottle',ARRAY['key','windowStartedAt','requests','lastRequestedAt']::text[],11)
++      ('CustomerAccessThrottle',ARRAY['key','windowStartedAt','requests','lastRequestedAt']::text[],11),
++      ('ReceptionistRecord',ARRAY['id','kind','payload','expiresAt','createdAt']::text[],12)
+     )
+     SELECT 1 FROM expected WHERE stage<=applied_count AND (
+       to_regclass(format('public.%I',table_name)) IS NULL OR
+@@ -1148,7 +1173,8 @@ $migration_8_sql$;
+         || CASE WHEN applied_count>=7 THEN ARRAY['AdminCredential'] ELSE ARRAY[]::text[] END
+         || CASE WHEN applied_count>=9 THEN ARRAY['DisplayOrder'] ELSE ARRAY[]::text[] END
+         || CASE WHEN applied_count>=10 THEN ARRAY['EmployeeTimeEntry'] ELSE ARRAY[]::text[] END
+-        || CASE WHEN applied_count>=11 THEN ARRAY['CustomerAccount','CustomerAccessChallenge','CustomerAccessThrottle'] ELSE ARRAY[]::text[] END)
++        || CASE WHEN applied_count>=11 THEN ARRAY['CustomerAccount','CustomerAccessChallenge','CustomerAccessThrottle'] ELSE ARRAY[]::text[] END
++        || CASE WHEN applied_count>=12 THEN ARRAY['ReceptionistRecord'] ELSE ARRAY[]::text[] END)
+   ) THEN
+     RAISE EXCEPTION 'Setup stopped: application schema is missing, partial, or unexpected. Nothing was changed.';
+   END IF;
+@@ -1208,7 +1234,8 @@ $migration_9_sql$;
+       ('EmployeeTimeEntry',ARRAY['id','employeeId','clockedInAt','clockedOutAt','clockOutReason']::text[],10),
+       ('CustomerAccount',ARRAY['id','phone','passwordHash','phoneVerifiedAt','sessionVersion','loginFailures','loginLockedUntil','createdAt','updatedAt']::text[],11),
+       ('CustomerAccessChallenge',ARRAY['id','customerId','appointmentId','purpose','codeHash','expiresAt','attempts','consumedAt','createdAt']::text[],11),
+-      ('CustomerAccessThrottle',ARRAY['key','windowStartedAt','requests','lastRequestedAt']::text[],11)
++      ('CustomerAccessThrottle',ARRAY['key','windowStartedAt','requests','lastRequestedAt']::text[],11),
++      ('ReceptionistRecord',ARRAY['id','kind','payload','expiresAt','createdAt']::text[],12)
+     )
+     SELECT 1 FROM expected WHERE stage<=applied_count AND (
+       to_regclass(format('public.%I',table_name)) IS NULL OR
+@@ -1228,7 +1255,8 @@ $migration_9_sql$;
+         || CASE WHEN applied_count>=7 THEN ARRAY['AdminCredential'] ELSE ARRAY[]::text[] END
+         || CASE WHEN applied_count>=9 THEN ARRAY['DisplayOrder'] ELSE ARRAY[]::text[] END
+         || CASE WHEN applied_count>=10 THEN ARRAY['EmployeeTimeEntry'] ELSE ARRAY[]::text[] END
+-        || CASE WHEN applied_count>=11 THEN ARRAY['CustomerAccount','CustomerAccessChallenge','CustomerAccessThrottle'] ELSE ARRAY[]::text[] END)
++        || CASE WHEN applied_count>=11 THEN ARRAY['CustomerAccount','CustomerAccessChallenge','CustomerAccessThrottle'] ELSE ARRAY[]::text[] END
++        || CASE WHEN applied_count>=12 THEN ARRAY['ReceptionistRecord'] ELSE ARRAY[]::text[] END)
+   ) THEN
+     RAISE EXCEPTION 'Setup stopped: application schema is missing, partial, or unexpected. Nothing was changed.';
+   END IF;
+@@ -1298,7 +1326,8 @@ $migration_10_sql$;
+       ('EmployeeTimeEntry',ARRAY['id','employeeId','clockedInAt','clockedOutAt','clockOutReason']::text[],10),
+       ('CustomerAccount',ARRAY['id','phone','passwordHash','phoneVerifiedAt','sessionVersion','loginFailures','loginLockedUntil','createdAt','updatedAt']::text[],11),
+       ('CustomerAccessChallenge',ARRAY['id','customerId','appointmentId','purpose','codeHash','expiresAt','attempts','consumedAt','createdAt']::text[],11),
+-      ('CustomerAccessThrottle',ARRAY['key','windowStartedAt','requests','lastRequestedAt']::text[],11)
++      ('CustomerAccessThrottle',ARRAY['key','windowStartedAt','requests','lastRequestedAt']::text[],11),
++      ('ReceptionistRecord',ARRAY['id','kind','payload','expiresAt','createdAt']::text[],12)
+     )
+     SELECT 1 FROM expected WHERE stage<=applied_count AND (
+       to_regclass(format('public.%I',table_name)) IS NULL OR
+@@ -1318,7 +1347,8 @@ $migration_10_sql$;
+         || CASE WHEN applied_count>=7 THEN ARRAY['AdminCredential'] ELSE ARRAY[]::text[] END
+         || CASE WHEN applied_count>=9 THEN ARRAY['DisplayOrder'] ELSE ARRAY[]::text[] END
+         || CASE WHEN applied_count>=10 THEN ARRAY['EmployeeTimeEntry'] ELSE ARRAY[]::text[] END
+-        || CASE WHEN applied_count>=11 THEN ARRAY['CustomerAccount','CustomerAccessChallenge','CustomerAccessThrottle'] ELSE ARRAY[]::text[] END)
++        || CASE WHEN applied_count>=11 THEN ARRAY['CustomerAccount','CustomerAccessChallenge','CustomerAccessThrottle'] ELSE ARRAY[]::text[] END
++        || CASE WHEN applied_count>=12 THEN ARRAY['ReceptionistRecord'] ELSE ARRAY[]::text[] END)
+   ) THEN
+     RAISE EXCEPTION 'Setup stopped: application schema is missing, partial, or unexpected. Nothing was changed.';
+   END IF;
+@@ -1457,7 +1487,86 @@ $migration_11_sql$;
+       ('EmployeeTimeEntry',ARRAY['id','employeeId','clockedInAt','clockedOutAt','clockOutReason']::text[],10),
+       ('CustomerAccount',ARRAY['id','phone','passwordHash','phoneVerifiedAt','sessionVersion','loginFailures','loginLockedUntil','createdAt','updatedAt']::text[],11),
+       ('CustomerAccessChallenge',ARRAY['id','customerId','appointmentId','purpose','codeHash','expiresAt','attempts','consumedAt','createdAt']::text[],11),
+-      ('CustomerAccessThrottle',ARRAY['key','windowStartedAt','requests','lastRequestedAt']::text[],11)
++      ('CustomerAccessThrottle',ARRAY['key','windowStartedAt','requests','lastRequestedAt']::text[],11),
++      ('ReceptionistRecord',ARRAY['id','kind','payload','expiresAt','createdAt']::text[],12)
++    )
++    SELECT 1 FROM expected WHERE stage<=applied_count AND (
++      to_regclass(format('public.%I',table_name)) IS NULL OR
++      ARRAY(SELECT item FROM unnest(column_names) AS cols(item) ORDER BY item)<>
++      ARRAY(SELECT attname::text FROM pg_attribute
++        WHERE attrelid=to_regclass(format('public.%I',table_name)) AND attnum>0 AND NOT attisdropped ORDER BY attname::text)
++    )
++  ) OR EXISTS (
++    SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
++    WHERE n.nspname='public' AND c.relkind IN ('r','p') AND c.relname<>'_prisma_migrations'
++      AND c.relname<>ALL(ARRAY['Category','Brand','DeviceModel','RepairService','Offering','Appointment','BusinessHour','Block','BookingLock']
++        || CASE WHEN applied_count>=2 THEN ARRAY['Location','LocationBusinessHour'] ELSE ARRAY[]::text[] END
++        || CASE WHEN applied_count>=3 THEN ARRAY['ModelImage'] ELSE ARRAY[]::text[] END
++        || CASE WHEN applied_count>=4 THEN ARRAY['PreRepairQuestion','AppointmentPreRepairAnswer'] ELSE ARRAY[]::text[] END
++        || CASE WHEN applied_count>=5 THEN ARRAY['Employee','EmployeeLocation','NotificationDelivery'] ELSE ARRAY[]::text[] END
++        || CASE WHEN applied_count>=6 THEN ARRAY['AppointmentPhoto','PaymentMethod','AppointmentCheckout'] ELSE ARRAY[]::text[] END
++        || CASE WHEN applied_count>=7 THEN ARRAY['AdminCredential'] ELSE ARRAY[]::text[] END
++        || CASE WHEN applied_count>=9 THEN ARRAY['DisplayOrder'] ELSE ARRAY[]::text[] END
++        || CASE WHEN applied_count>=10 THEN ARRAY['EmployeeTimeEntry'] ELSE ARRAY[]::text[] END
++        || CASE WHEN applied_count>=11 THEN ARRAY['CustomerAccount','CustomerAccessChallenge','CustomerAccessThrottle'] ELSE ARRAY[]::text[] END
++        || CASE WHEN applied_count>=12 THEN ARRAY['ReceptionistRecord'] ELSE ARRAY[]::text[] END)
++  ) THEN
++    RAISE EXCEPTION 'Setup stopped: application schema is missing, partial, or unexpected. Nothing was changed.';
++  END IF;
++  END IF;
++  IF applied_count<12 THEN
++    -- Acquire the application's write lock before taking any application DDL
++    -- locks. Old deployments also lock BookingLock before touching bookings.
++    UPDATE "BookingLock" SET "revision"="revision"+1 WHERE "id"=1;
++    IF NOT FOUND THEN
++      RAISE EXCEPTION 'Setup stopped: the shared booking lock is missing. Nothing was changed.';
++    END IF;
++    -- Execute the exact migration bytes recorded by Prisma.
++    EXECUTE $migration_12_sql$
++CREATE TABLE "ReceptionistRecord" (
++ "id" TEXT NOT NULL PRIMARY KEY,
++ "kind" TEXT NOT NULL,
++ "payload" JSONB NOT NULL,
++ "expiresAt" TIMESTAMP(3),
++ "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
++);
++CREATE INDEX "ReceptionistRecord_kind_expiresAt_idx" ON "ReceptionistRecord"("kind","expiresAt");
++$migration_12_sql$;
++    INSERT INTO "_prisma_migrations"
++      ("id","checksum","finished_at","migration_name","started_at","applied_steps_count")
++    VALUES (gen_random_uuid()::text,'fc830034208a6dd3310d31e3da889dc7fed28fc61fa49e19babb814733921362',now(),'20261023010000_receptionist_integration',now(),1);
++    applied_count=12;
++
++  -- Refuse a partially applied or unrelated schema, even if ledger rows exist.
++  IF EXISTS (
++    WITH expected(table_name,column_names,stage) AS (VALUES
++      ('Category',ARRAY['id','name']::text[],1),
++      ('Brand',ARRAY['id','name','categoryId']::text[],1),
++      ('DeviceModel',ARRAY['id','name','brandId']::text[] || CASE WHEN applied_count>=3 THEN ARRAY['sortOrder']::text[] ELSE ARRAY[]::text[] END,1),
++      ('RepairService',ARRAY['id','name','description']::text[],1),
++      ('Offering',ARRAY['id','modelId','serviceId','price','duration']::text[],1),
++      ('Appointment',ARRAY['id','offeringId','firstName','lastName','email','phone','notes','start','end','price','duration','status','createdAt']::text[] || CASE WHEN applied_count>=2 THEN ARRAY['locationId']::text[] ELSE ARRAY[]::text[] END || CASE WHEN applied_count>=5 THEN ARRAY['manageKey','smsConsent','notificationRevision']::text[] ELSE ARRAY[]::text[] END || CASE WHEN applied_count>=6 THEN ARRAY['createdByRole','createdByEmployeeId','checkedInAt','checkedInByRole','checkedInByEmployeeId']::text[] ELSE ARRAY[]::text[] END || CASE WHEN applied_count>=11 THEN ARRAY['ticketNumber','customerId','customerLinkedAt','customerRecordsReleasedAt','portalPhone','portalEligible']::text[] ELSE ARRAY[]::text[] END,1),
++      ('BusinessHour',ARRAY['day','open','close','enabled']::text[],1),
++      ('Block',ARRAY['id','start','end','reason']::text[] || CASE WHEN applied_count>=2 THEN ARRAY['locationId']::text[] ELSE ARRAY[]::text[] END,1),
++      ('BookingLock',ARRAY['id','revision']::text[],1),
++      ('Location',ARRAY['id','name','address','timeZone','enabled']::text[],2),
++      ('LocationBusinessHour',ARRAY['locationId','day','open','close','enabled']::text[],2),
++      ('ModelImage',ARRAY['modelId','dataBytes','mimeType','version','updatedAt']::text[],3),
++      ('PreRepairQuestion',ARRAY['id','categoryId','question','enabled','required','sortOrder','archived','updatedAt']::text[],4),
++      ('AppointmentPreRepairAnswer',ARRAY['id','appointmentId','questionId','question','answer','sortOrder']::text[],4),
++      ('Employee',ARRAY['id','name','email','phone','enabled','emailAlerts','smsAlerts','createdAt','updatedAt']::text[] || CASE WHEN applied_count>=6 THEN ARRAY['username','passwordHash','loginEnabled','sessionVersion','loginFailures','loginLockedUntil']::text[] ELSE ARRAY[]::text[] END,5),
++      ('EmployeeLocation',ARRAY['employeeId','locationId']::text[],5),
++      ('NotificationDelivery',ARRAY['id','appointmentId','event','revision','channel','audience','employeeId','target','payload','status','attempts','lastError','providerId','nextAttemptAt','lockedAt','firstAttemptAt','claimToken','sentAt','createdAt','updatedAt']::text[],5),
++      ('AppointmentPhoto',ARRAY['id','appointmentId','phase','dataBytes','mimeType','uploaderRole','uploaderEmployeeId','createdAt']::text[],6),
++      ('PaymentMethod',ARRAY['id','name','enabled','createdAt','updatedAt']::text[] || CASE WHEN applied_count>=8 THEN ARRAY['sortOrder']::text[] ELSE ARRAY[]::text[] END,6),
++      ('AppointmentCheckout',ARRAY['appointmentId','amount','paymentMethodId','paymentMethodName','recordedByRole','recordedByEmployeeId','notes','createdAt']::text[] || CASE WHEN applied_count>=11 THEN ARRAY['servicePerformed','technicianName']::text[] ELSE ARRAY[]::text[] END,6),
++      ('AdminCredential',ARRAY['id','passwordHash','sessionVersion','updatedAt']::text[],7),
++      ('DisplayOrder',ARRAY['scope','itemIds','revision','updatedAt']::text[],9),
++      ('EmployeeTimeEntry',ARRAY['id','employeeId','clockedInAt','clockedOutAt','clockOutReason']::text[],10),
++      ('CustomerAccount',ARRAY['id','phone','passwordHash','phoneVerifiedAt','sessionVersion','loginFailures','loginLockedUntil','createdAt','updatedAt']::text[],11),
++      ('CustomerAccessChallenge',ARRAY['id','customerId','appointmentId','purpose','codeHash','expiresAt','attempts','consumedAt','createdAt']::text[],11),
++      ('CustomerAccessThrottle',ARRAY['key','windowStartedAt','requests','lastRequestedAt']::text[],11),
++      ('ReceptionistRecord',ARRAY['id','kind','payload','expiresAt','createdAt']::text[],12)
+     )
+     SELECT 1 FROM expected WHERE stage<=applied_count AND (
+       to_regclass(format('public.%I',table_name)) IS NULL OR
+@@ -1477,7 +1586,8 @@ $migration_11_sql$;
+         || CASE WHEN applied_count>=7 THEN ARRAY['AdminCredential'] ELSE ARRAY[]::text[] END
+         || CASE WHEN applied_count>=9 THEN ARRAY['DisplayOrder'] ELSE ARRAY[]::text[] END
+         || CASE WHEN applied_count>=10 THEN ARRAY['EmployeeTimeEntry'] ELSE ARRAY[]::text[] END
+-        || CASE WHEN applied_count>=11 THEN ARRAY['CustomerAccount','CustomerAccessChallenge','CustomerAccessThrottle'] ELSE ARRAY[]::text[] END)
++        || CASE WHEN applied_count>=11 THEN ARRAY['CustomerAccount','CustomerAccessChallenge','CustomerAccessThrottle'] ELSE ARRAY[]::text[] END
++        || CASE WHEN applied_count>=12 THEN ARRAY['ReceptionistRecord'] ELSE ARRAY[]::text[] END)
+   ) THEN
+     RAISE EXCEPTION 'Setup stopped: application schema is missing, partial, or unexpected. Nothing was changed.';
+   END IF;
 diff --git a/prisma/schema.prisma b/prisma/schema.prisma
 index afb2918..e9fbd10 100644
 --- a/prisma/schema.prisma
@@ -1220,6 +2143,307 @@ index afb2918..e9fbd10 100644
 + createdAt DateTime @default(now())
 + @@index([kind,expiresAt])
 +}
+diff --git a/scripts/neon-sql-qa.ts b/scripts/neon-sql-qa.ts
+new file mode 100644
+index 0000000..a0ad7cd
+--- /dev/null
++++ b/scripts/neon-sql-qa.ts
+@@ -0,0 +1,102 @@
++// Run: node --import tsx --import dotenv/config --test scripts/neon-sql-qa.ts
++// Creates and drops only its own database on the dedicated local PostgreSQL port.
++import {test} from 'node:test';
++import assert from 'node:assert/strict';
++import {createHash,randomUUID} from 'node:crypto';
++import {readFileSync,readdirSync} from 'node:fs';
++import {createRequire} from 'node:module';
++import {join} from 'node:path';
++import {migrationBootstrap} from './neon-sql';
++
++const {Client}=createRequire(import.meta.url)('pg');
++const receptionistMigration='20261023010000_receptionist_integration';
++const migrationNames=readdirSync('prisma/migrations',{withFileTypes:true}).filter(entry=>entry.isDirectory()).map(entry=>entry.name).sort();
++const upgradeSql=readFileSync('prisma/neon-locations-upgrade.sql','utf8');
++const setupSql=readFileSync('prisma/neon-setup.sql','utf8');
++
++test('generated SQL supports receptionist migration history and validates its schema',async t=>{
++ const url=new URL(process.env.DATABASE_URL??'');
++ assert(url.hostname==='127.0.0.1'&&url.port==='55432'&&process.env.NODE_ENV!=='production','SQL verification requires dedicated local PostgreSQL at 127.0.0.1:55432.');
++ const database='neon_sql_qa_'+randomUUID().replaceAll('-','');
++ url.pathname='/postgres';
++ const admin=new Client({connectionString:url.toString(),connectionTimeoutMillis:10000});
++ await admin.connect();
++ let created=false,connected=false;
++ url.pathname='/'+database;
++ const db=new Client({connectionString:url.toString(),connectionTimeoutMillis:10000});
++ const table=async()=> (await db.query(`SELECT to_regclass('public."ReceptionistRecord"')::text AS name`)).rows[0].name;
++ const ledger=async()=> (await db.query('SELECT migration_name,checksum,finished_at,started_at,applied_steps_count FROM "_prisma_migrations" ORDER BY migration_name')).rows;
++ const records=async()=> (await db.query('SELECT * FROM "ReceptionistRecord" ORDER BY id')).rows;
++ async function fixture(includeReceptionist:boolean){
++  await db.query('ROLLBACK');
++  await db.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public');
++  await db.query(`CREATE TABLE "_prisma_migrations" (
++   id VARCHAR(36) PRIMARY KEY, checksum VARCHAR(64) NOT NULL, finished_at TIMESTAMPTZ,
++   migration_name VARCHAR(255) NOT NULL, logs TEXT, rolled_back_at TIMESTAMPTZ,
++   started_at TIMESTAMPTZ NOT NULL DEFAULT now(), applied_steps_count INTEGER NOT NULL DEFAULT 0
++  )`);
++  for(const name of migrationNames.filter(name=>includeReceptionist||name<receptionistMigration)){
++   const sql=readFileSync(join('prisma/migrations',name,'migration.sql'),'utf8');
++   await db.query(sql);
++   await db.query('INSERT INTO "_prisma_migrations" (id,checksum,finished_at,migration_name,applied_steps_count) VALUES ($1,$2,now(),$3,1)',[randomUUID(),createHash('sha256').update(sql).digest('hex'),name]);
++  }
++ }
++ try{
++  await admin.query(`CREATE DATABASE "${database}"`);created=true;
++  await db.connect();connected=true;
++  await t.test('upgrade creates the absent receptionist table from customer portal history and reruns twice',async()=>{
++   await fixture(false);
++   assert.equal((await ledger()).length,11);
++   assert.equal(await table(),null);
++   await db.query(upgradeSql);
++   assert.equal(await table(),'"ReceptionistRecord"','The production upgrade must apply the receptionist migration.');
++   assert.equal((await ledger()).length,12);
++   const before=await ledger();
++   for(let run=0;run<2;run++){
++    await db.query(upgradeSql);
++    assert.deepEqual(await ledger(),before,'Reruns must retain exactly one completed record for each migration.');
++   }
++  });
++  await t.test('both bootstrap modes accept independently tracked twelve-migration history and preserve records',async()=>{
++   await fixture(true);
++   assert.equal((await ledger()).length,12);
++   await db.query(`INSERT INTO "ReceptionistRecord" (id,kind,payload,"expiresAt") VALUES ('qa-record','grant','{"sessionVersion":7}',TIMESTAMP '2030-01-02 03:04:05')`);
++   const before=await ledger(),recordBefore=await records();
++   for(const sql of [migrationBootstrap('upgrade')+'COMMIT;',migrationBootstrap('full')+'COMMIT;',upgradeSql,setupSql]){
++    for(let run=0;run<2;run++){
++     await db.query(sql);
++     assert.deepEqual(await ledger(),before);
++     assert.deepEqual(await records(),recordBefore,'Bootstrap reruns must preserve receptionist payloads and expiry.');
++    }
++   }
++  });
++  await t.test('tracked stage twelve rejects a missing or partial receptionist table without changing history',async()=>{
++   for(const mode of ['full','upgrade'] as const){
++    for(const damage of ['DROP TABLE "ReceptionistRecord"','ALTER TABLE "ReceptionistRecord" DROP COLUMN "expiresAt"']){
++     await fixture(true);
++     await db.query(damage);
++     const before=await ledger();
++     await assert.rejects(db.query(migrationBootstrap(mode)+'COMMIT;'),/application schema is missing, partial, or unexpected/);
++     await db.query('ROLLBACK');
++     assert.deepEqual(await ledger(),before);
++    }
++   }
++  });
++  await t.test('fresh generated setup creates receptionist storage without seeding private records',async()=>{
++   await db.query('ROLLBACK');
++   await db.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public');
++   await db.query(setupSql);
++   assert.equal(await table(),'"ReceptionistRecord"');
++   assert.equal((await ledger()).length,12);
++   assert.deepEqual(await records(),[]);
++   const before=await ledger();
++   await db.query(setupSql);
++   assert.deepEqual(await ledger(),before);
++   assert.deepEqual(await records(),[]);
++  });
++ }finally{
++  if(connected)await db.end();
++  if(created)await admin.query(`DROP DATABASE "${database}"`);
++  await admin.end();
++ }
++});
+diff --git a/scripts/neon-sql.ts b/scripts/neon-sql.ts
+index 18742db..dc4bb2c 100644
+--- a/scripts/neon-sql.ts
++++ b/scripts/neon-sql.ts
+@@ -3,7 +3,7 @@ import {readFileSync} from 'node:fs';
+ import {resolve} from 'node:path';
+ 
+ export const quote=(value:string)=>`'${value.replaceAll("'","''")}'`;
+-export const migrations=['20261006230000_postgresql_init','20261008010000_locations','20261011010000_model_presentation','20261011020000_pre_repair_questions','20261013010000_employee_notifications','20261016010000_staff_repair_checkout','20261016020000_admin_credentials','20261017010000_payment_method_order','20261021010000_display_order','20261021020000_employee_time_clock','20261021030000_customer_portal'].map((name,index)=>{
++export const migrations=['20261006230000_postgresql_init','20261008010000_locations','20261011010000_model_presentation','20261011020000_pre_repair_questions','20261013010000_employee_notifications','20261016010000_staff_repair_checkout','20261016020000_admin_credentials','20261017010000_payment_method_order','20261021010000_display_order','20261021020000_employee_time_clock','20261021030000_customer_portal','20261023010000_receptionist_integration'].map((name,index)=>{
+  const sql=readFileSync(resolve('prisma/migrations',name,'migration.sql'),'utf8');
+  const delimiter=`$migration_${index+1}_sql$`;
+  if(sql.includes(delimiter))throw new Error(`Migration ${name} contains the SQL wrapper delimiter.`);
+@@ -37,6 +37,7 @@ const schemaTables:[string,string[],number][]=[
+  ['CustomerAccount',['id','phone','passwordHash','phoneVerifiedAt','sessionVersion','loginFailures','loginLockedUntil','createdAt','updatedAt'],11],
+  ['CustomerAccessChallenge',['id','customerId','appointmentId','purpose','codeHash','expiresAt','attempts','consumedAt','createdAt'],11],
+  ['CustomerAccessThrottle',['key','windowStartedAt','requests','lastRequestedAt'],11],
++ ['ReceptionistRecord',['id','kind','payload','expiresAt','createdAt'],12],
+ ];
+ const schemaValues=schemaTables.map(([table,columns,stage])=>{
+  const array=`ARRAY[${columns.map(quote).join(',')}]::text[]`;
+@@ -72,7 +73,8 @@ ${schemaValues}
+         || CASE WHEN applied_count>=7 THEN ARRAY['AdminCredential'] ELSE ARRAY[]::text[] END
+         || CASE WHEN applied_count>=9 THEN ARRAY['DisplayOrder'] ELSE ARRAY[]::text[] END
+         || CASE WHEN applied_count>=10 THEN ARRAY['EmployeeTimeEntry'] ELSE ARRAY[]::text[] END
+-        || CASE WHEN applied_count>=11 THEN ARRAY['CustomerAccount','CustomerAccessChallenge','CustomerAccessThrottle'] ELSE ARRAY[]::text[] END)
++        || CASE WHEN applied_count>=11 THEN ARRAY['CustomerAccount','CustomerAccessChallenge','CustomerAccessThrottle'] ELSE ARRAY[]::text[] END
++        || CASE WHEN applied_count>=12 THEN ARRAY['ReceptionistRecord'] ELSE ARRAY[]::text[] END)
+   ) THEN
+     RAISE EXCEPTION 'Setup stopped: application schema is missing, partial, or unexpected. Nothing was changed.';
+   END IF;
+@@ -122,7 +124,7 @@ DECLARE history_count INTEGER; applied_count INTEGER;
+ BEGIN
+   SELECT count(*) INTO history_count FROM "_prisma_migrations";
+   IF history_count<${mode==='full'?0:1} OR history_count>${migrations.length} THEN
+-    RAISE EXCEPTION 'Setup stopped: expected ${mode==='full'?'empty, baseline, location, model presentation, pre-repair question, employee notification, staff repair checkout, admin credential, payment method order, display order, employee time clock, or customer portal':'baseline, location, model presentation, pre-repair question, employee notification, staff repair checkout, admin credential, payment method order, display order, employee time clock, or customer portal'} migration history. Nothing was changed.';
++    RAISE EXCEPTION 'Setup stopped: expected ${mode==='full'?'empty, baseline, location, model presentation, pre-repair question, employee notification, staff repair checkout, admin credential, payment method order, display order, employee time clock, customer portal, or receptionist integration':'baseline, location, model presentation, pre-repair question, employee notification, staff repair checkout, admin credential, payment method order, display order, employee time clock, customer portal, or receptionist integration'} migration history. Nothing was changed.';
+   END IF;
+ ${checks}
+   applied_count=history_count;
+diff --git a/scripts/receptionist-cross-site-qa.ts b/scripts/receptionist-cross-site-qa.ts
+new file mode 100644
+index 0000000..4571b4f
+--- /dev/null
++++ b/scripts/receptionist-cross-site-qa.ts
+@@ -0,0 +1,147 @@
++// Synthetic loopback sites only: no provider credentials or database is used.
++// PLAYWRIGHT_PACKAGE_JSON selects an installed Playwright package's package.json.
++import assert from "node:assert/strict";
++import { AsyncLocalStorage } from "node:async_hooks";
++import { createRequire } from "node:module";
++import { join } from "node:path";
++import { createServer } from "node:http";
++import type { AddressInfo } from "node:net";
++import type { WorkStore } from "next/dist/server/app-render/work-async-storage.external";
++
++async function main() {
++  Object.defineProperty(globalThis, "AsyncLocalStorage", {
++    value: AsyncLocalStorage,
++    configurable: true,
++  });
++  process.env.DATABASE_URL = "postgresql://unused@127.0.0.1:1/synthetic_only";
++  process.env.SESSION_SECRET = "synthetic-cross-site-test-secret-at-least-32-characters";
++  const [
++    { NextRequest },
++    { createRequestStoreForAPI },
++    { workUnitAsyncStorage },
++    { workAsyncStorage },
++    { db },
++    { createAdminSession },
++    route,
++  ] = await Promise.all([
++    import("next/server"),
++    import("next/dist/server/async-storage/request-store.js"),
++    import("next/dist/server/app-render/work-unit-async-storage.external.js"),
++    import("next/dist/server/app-render/work-async-storage.external.js"),
++    import("../lib/db"),
++    import("../lib/auth"),
++    import("../app/api/integrations/receptionist/v1/[...path]/route"),
++  ]);
++  // Replace only the credential database boundary. Cookie signature validation,
++  // request cookie policy, the route, and approval HTML all remain real.
++  db.adminCredential.findUnique = (async () => ({
++    id: 1, passwordHash: null, sessionVersion: 0, updatedAt: new Date(),
++  })) as unknown as typeof db.adminCredential.findUnique;
++  db.$transaction = (() => {
++    throw Error("Authorization must wait for the administrator's approval POST");
++  }) as typeof db.$transaction;
++  const browserRequire = createRequire(
++    process.env.PLAYWRIGHT_PACKAGE_JSON ??
++      join(process.env.RUNNER_TEMP ?? "/tmp", "service-assignment-browser", "package.json"),
++  );
++  const { chromium } = browserRequire("playwright");
++
++  const requests: { site: string | undefined; adminCookie: boolean; status: number }[] = [];
++  let callbackVisited = false;
++  let repairOrigin = "", receptionistOrigin = "", authorizeUrl = "";
++  const server = createServer((incoming, outgoing) => {
++    void (async () => {
++      const url = new URL(incoming.url ?? "/", "http://" + incoming.headers.host);
++      if (url.pathname === "/favicon.ico") { outgoing.statusCode = 204; outgoing.end(); return; }
++      if (url.origin === receptionistOrigin) {
++        if (url.pathname === "/api/auth/callback") callbackVisited = true;
++        outgoing.setHeader("Content-Type", "text/html");
++        outgoing.end(`<a href="${authorizeUrl.replace(/&/g, "&amp;")}">Connect administrator</a>`);
++        return;
++      }
++      assert.equal(url.origin, repairOrigin, "all traffic must remain on loopback");
++      assert.equal(incoming.method, "GET", "authorization must wait for the approval POST");
++      const headers = new Headers();
++      for (const [name, value] of Object.entries(incoming.headers)) {
++        if (value !== undefined) headers.set(name, Array.isArray(value) ? value.join(", ") : value);
++      }
++      const request = new NextRequest(url.href, { headers });
++      let cookieUpdates: string[] = [];
++      const store = createRequestStoreForAPI(
++        request, { pathname: url.pathname }, { tags: [], expirationsByCacheKind: new Map() },
++        (cookies) => { cookieUpdates = cookies; }, undefined,
++      );
++      const response = await workAsyncStorage.run(
++        { route: url.pathname } as WorkStore,
++        () => workUnitAsyncStorage.run(store, () => route.GET(request, {
++          params: Promise.resolve({ path: ["authorize"] }),
++        })),
++      );
++      requests.push({
++        site: headers.get("sec-fetch-site") ?? undefined,
++        adminCookie: (headers.get("cookie") ?? "").includes("repair-admin="),
++        status: response.status,
++      });
++      outgoing.statusCode = response.status;
++      response.headers.forEach((value, name) => outgoing.setHeader(name, value));
++      if (cookieUpdates.length) outgoing.setHeader("Set-Cookie", cookieUpdates);
++      outgoing.end(await response.text());
++    })().catch((error) => { outgoing.statusCode = 500; outgoing.end("Synthetic test failed"); console.error(error); });
++  });
++  await new Promise<void>((resolve, reject) => {
++    server.once("error", reject);
++    server.listen(0, "127.0.0.1", resolve);
++  });
++  const port = (server.address() as AddressInfo).port;
++  repairOrigin = `http://127.0.0.1:${port}`;
++  receptionistOrigin = `http://localhost:${port}`;
++  process.env.RECEPTIONIST_ORIGIN = receptionistOrigin;
++  process.env.APP_URL = repairOrigin;
++  const query = {
++    redirect_uri: receptionistOrigin + "/api/auth/callback",
++    state: "s".repeat(32),
++    code_challenge: "p".repeat(43),
++  };
++  authorizeUrl = repairOrigin + "/api/integrations/receptionist/v1/authorize?" + new URLSearchParams(query);
++  let browser: any;
++  try {
++    browser = await chromium.launch({
++      headless: true,
++      ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}),
++      args: ["--no-sandbox"],
++    });
++    const context = await browser.newContext();
++    const token = createAdminSession(0);
++    await context.addCookies([{
++      name: "repair-admin", value: token, domain: "127.0.0.1", path: "/",
++      httpOnly: true, secure: false, sameSite: "Strict",
++    }]);
++    const page = await context.newPage();
++    await page.goto(receptionistOrigin);
++    await page.getByRole("link", { name: "Connect administrator" }).click();
++    assert.equal(requests[0]?.site, "cross-site");
++    assert.equal(requests[0]?.adminCookie, false, "Strict cookies must stay absent on cross-site arrival");
++    assert.equal(requests[0]?.status, 200, "cross-site arrival must render a public continuation");
++    assert.equal(await page.locator("form").count(), 0, "landing must not authorize the connection");
++    assert.equal(callbackVisited, false);
++    await page.getByRole("link", { name: "Continue to administrator approval" }).click();
++    assert.equal(requests[1]?.site, "same-origin");
++    assert.equal(requests[1]?.adminCookie, true, "same-origin continuation must carry the existing Strict cookie");
++    assert.equal(requests[1]?.status, 200);
++    assert.equal(await page.locator('form[method="post"]').count(), 1);
++    assert.equal(await page.getByRole("button", { name: "Connect admin account" }).count(), 1);
++    assert.ok(await page.locator('input[name="csrf"]').inputValue());
++    for (const [name, value] of Object.entries(query)) {
++      assert.equal(await page.locator(`input[name="${name}"]`).inputValue(), value);
++    }
++    assert.equal(callbackVisited, false, "administrator approval must precede the callback");
++    console.log("PASS cross-site landing omits Strict cookie; same-origin continuation sends it; explicit approval remains required.");
++  } finally {
++    await browser?.close();
++    server.closeAllConnections();
++    await new Promise<void>((resolve) => server.close(() => resolve()));
++    await db.$disconnect();
++  }
++}
++
++main().catch((error) => { console.error(error); process.exitCode = 1; });
 diff --git a/scripts/receptionist-test-fixture.ts b/scripts/receptionist-test-fixture.ts
 new file mode 100644
 index 0000000..6fda8aa

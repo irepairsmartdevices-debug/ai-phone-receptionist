@@ -37,7 +37,7 @@ Messages and settings persist in PostgreSQL. Verification codes are redacted. Te
 
 ## Connect the repair software locally
 
-The integration change is developed on branch `codex/receptionist-integration` in the separate repair checkout at `/workspace/shopify-phone-repair-booking`. Its base is `ed1350abc9df14f365347679b13142bf29dfbd82`. A reviewable patch is also retained in `docs/integration/repair-api.patch`. Apply/review the change in the other Codex environment before deploying that project; changes here do not automatically update another environment or GitHub.
+The hosted integration is published in the repair repository on `main`, including commit `a44e20c`. This session prepared it against current source base `811fcb1` in `/workspace/.worktrees/repair-receptionist-connect`, preserving newer catalog and time-clock work. A reviewable patch against that base is retained in `docs/integration/repair-api.patch`. Another Codex checkout must pull the current repair main to obtain the changes. The hosted variable and administrator authorization steps are in [Production connection](docs/integration/production-connection.md); publishing the code alone does not configure those private values.
 
 The local configuration helper creates matching random development API credentials without printing them, only when configuration is absent. Existing configuration is preserved. In the repair checkout:
 
@@ -66,7 +66,7 @@ npm run build
 
 Stop the receptionist before building: Next development and production processes must not write the same `.next` output concurrently. For fixture browser checks, start the production build in fixture mode and run `npm run test:browser`. Chromium can be selected using `CHROMIUM_PATH`; the cloud default is `/usr/bin/chromium`.
 
-For the connected browser check, start the receptionist with `RECEPTIONIST_MODE=connected`, then run `TEST_MODE=connected npm run test:browser`. `REPAIR_CHECKOUT` selects the source checkout if it is in another directory. The integration fixture helper refuses production or remote databases; it creates fresh disposable tickets and development grants. Test output never prints these credentials.
+For the connected browser check, start the receptionist with `RECEPTIONIST_MODE=connected`, then run `TEST_MODE=connected npm run test:browser`. `REPAIR_CHECKOUT` selects the source checkout if it is in another directory. Set `REPAIR_TEST_ORIGIN` to the local repair origin when using a distinct hostname (for example `http://127.0.0.1:3001` with receptionist `http://localhost:3000`) to exercise cross-site Strict-cookie authorization; match the running apps’ origin variables. The integration fixture helper refuses production or remote databases; it creates fresh disposable tickets and development grants. Test output never prints these credentials.
 
 Run the repair app's `npm test` and `npm run build` from its own checkout. Do not reuse the receptionist database URL for repair tests.
 
@@ -129,7 +129,7 @@ its source offering disappears; standalone manual entries remain usable during a
 Both test conversations and configured connected voice use this knowledge. No extra database
 migration is required: records use the existing `settings` table. Connecting real catalog prices
 still requires deploying the separate repair integration. Its retained commit is
-`2b396fd9e1e30bdccbd17a0a860cfc4cb6cef8e2`; the updated portable patch is in
+`a44e20c`; the updated portable patch is in
 `docs/integration/repair-api.patch`. Older source APIs are accepted, with conservative clarification
 when category/brand metadata is missing.
 

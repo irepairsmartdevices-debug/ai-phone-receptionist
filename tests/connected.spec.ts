@@ -5,10 +5,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {Pool} from "pg";
 import {randomUUID,createHash} from "node:crypto";
-test("staff authorization connects both apps and confirms a real local ticket cancellation", async ({
+test("administrator authorization connects both apps across sites and confirms a local test-ticket cancellation", async ({
   page,
   context,
 }) => {
+  test.setTimeout(60_000);
+  const repairOrigin = process.env.REPAIR_TEST_ORIGIN ?? "http://localhost:3001";
+  expect(["localhost", "127.0.0.1"]).toContain(new URL(repairOrigin).hostname);
   const dir = mkdtempSync(join(tmpdir(), "staff-auth-"));
   try {
     const file = join(dir, "fixture.json");
@@ -33,14 +36,20 @@ test("staff authorization connects both apps and confirms a real local ticket ca
       {
         name: "repair-admin",
         value: f.adminCookie,
-        url: "http://localhost:3001",
+        url: repairOrigin,
         httpOnly: true,
         sameSite: "Strict",
       },
     ]);
     await page.goto("/sign-in");
     await page.getByRole("link", { name: "Connect admin account" }).click();
-    await page.getByRole("button", { name: "Connect staff account" }).click();
+    if (new URL(repairOrigin).hostname !== "localhost") {
+      // A distinct repair hostname exercises production SameSite=Strict rules.
+      await page
+        .getByRole("link", { name: "Continue to administrator approval", exact: true })
+        .click();
+    }
+    await page.getByRole("button", { name: "Connect admin account", exact: true }).click();
     await expect(page).toHaveURL("http://localhost:3000/");
     await page.goto("/test");
     await expect(
