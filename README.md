@@ -111,7 +111,7 @@ connected repair service or live calls. Connected mode requires a repair adminis
 Open **Knowledge & pricing** in the admin panel (or Settings → Open Knowledge & pricing).
 Add a question, approved answer and optional alternate phrasings, then save. Edit and delete controls
 apply on the next conversation turn; deleting does not remove earlier transcript history.
-Exact saved questions and alternate phrasings work without an AI key. Set server-only `AI_PROVIDER_KEY`
+Exact saved questions, alternate phrasings and common repair-word equivalents (such as fix/repair and water-damaged/water damage) work without an AI key. Set server-only `AI_PROVIDER_KEY`
 for semantic matching of other phrasings. The provider selects a saved answer ID; the receptionist
 returns your approved answer. Ambiguous matches ask for clarification rather than inventing an answer.
 

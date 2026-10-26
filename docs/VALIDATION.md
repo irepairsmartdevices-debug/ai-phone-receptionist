@@ -69,3 +69,18 @@ with a $207.00 repair offering became quotable without restart; removing its off
 The test only creates and cleans up its own local catalog rows. An unpriced model is intentionally absent.
 Fetch and endpoint no-store policy were independently reviewed. Explicit manual overrides retain precedence;
 already-open admin catalog lists need a reload, while pricing turns fetch current data independently.
+
+## Water-damage FAQ wording regression
+
+Reproduced the reported generic response using saved question “Do you repair water-damaged phones?”
+and customer input “do you fix water damage devices”, with no provider key. Literal token overlap
+missed fix/repair, damaged/damage and generic device/phone wording. Added a bounded FAQ-only
+canonical vocabulary and strict core-token equivalence, preserving the existing fuzzy threshold.
+The responder still returns only stored approved answers. Guards prevent widening a phone-only
+FAQ to laptops or mixed phone/laptop requests; numeric models, variants, negation and policy intents
+remain distinct. Generic devices with multiple matching device-specific answers ask for clarification.
+Regression cases were observed failing before fixes and passing afterward. No pricing matcher or
+business facts were changed. A production browser regression saves a differently worded FAQ with no
+exact alternate and tests the reported customer wording through the live local API.
+Verified after final fixes: Node suite67/67, production knowledge browser suite4/4 (desktop/mobile CRUD,
+access checks and screenshot-wording regression), TypeScript and production build all passed.

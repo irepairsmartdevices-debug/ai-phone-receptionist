@@ -1,3 +1,4 @@
+import { canonicalFaq, compatibleFaq, genericDeviceWords } from "./faq-phrases";
 import type { Business } from "../contracts/repair";
 import type { CustomAnswer, ManualPrice } from "./types";
 export const normalize = (value: string) =>
@@ -323,20 +324,35 @@ export function matchSavedAnswer(
     "how",
     "please",
     "have",
+    "on",
   ]);
   const words = (s: string) =>
     new Set(
-      normalize(s)
+      canonicalFaq(normalize(s))
         .split(" ")
         .filter((w) => !stop.has(w)),
     );
   const input = words(text);
-  const candidates = answers.filter((a) =>
-    [a.question, ...a.variations].some((q) => {
-      const tokens = words(q);
-      const overlap = [...tokens].filter((t) => input.has(t)).length;
-      return overlap >= 2 && overlap / Math.max(tokens.size, input.size) >= 0.8;
-    }),
+  const candidates = answers.filter(
+    (a) =>
+      compatibleFaq(n, normalize(a.question)) &&
+      [a.question, ...a.variations].some((q) => {
+        if (!compatibleFaq(n, normalize(q))) return false;
+        const tokens = words(q);
+        const core = (values: Set<string>) =>
+          [...values].filter((w) => !genericDeviceWords.has(w)).sort();
+        const inputCore = core(input),
+          savedCore = core(tokens);
+        if (
+          inputCore.length >= 2 &&
+          inputCore.join(" ") === savedCore.join(" ")
+        )
+          return true;
+        const overlap = [...tokens].filter((t) => input.has(t)).length;
+        return (
+          overlap >= 2 && overlap / Math.max(tokens.size, input.size) >= 0.8
+        );
+      }),
   );
   return candidates.length === 1
     ? { answer: candidates[0] }

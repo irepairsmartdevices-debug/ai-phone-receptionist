@@ -209,3 +209,37 @@ for (const width of [1440, 390]) {
     }
   });
 }
+
+test("a saved water-damage answer handles the reported customer wording without an exact alternate", async ({
+  page,
+}) => {
+  await signIn(page);
+  const approved = "Approved water-damage policy " + randomUUID();
+  let id: string | undefined;
+  try {
+    const response = await page.request.post("/api/knowledge", {
+      headers: { origin },
+      data: {
+        kind: "answer",
+        question: "Do you repair water-damaged phones?",
+        variations: [],
+        answer: approved,
+      },
+    });
+    expect(response.status()).toBe(200);
+    const snapshot = await response.json();
+    id = snapshot.answers.find(
+      (a: { answer: string }) => a.answer === approved,
+    )?.id;
+    expect(id).toBeTruthy();
+    await page.goto("/test");
+    await send(page, "restart");
+    expect(await send(page, "do you fix water damage devices")).toBe(approved);
+  } finally {
+    if (id)
+      await page.request.delete("/api/knowledge", {
+        headers: { origin },
+        data: { kind: "answer", id },
+      });
+  }
+});
