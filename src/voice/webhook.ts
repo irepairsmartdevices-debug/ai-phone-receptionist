@@ -8,15 +8,13 @@ import {
   redact,
 } from "../persistence/conversations";
 import { validateTwilioSignature, voiceResponse } from "../providers/twilio";
-import {
-  ConversationEngine,
-  type State,
-  type Actor,
-} from "../conversation/engine";
+import { type State, type Actor } from "../conversation/engine";
+import { runAssistantTurn } from "../conversation/assistant";
+import type { AssistantState } from "../conversation/assistant-types";
+import { createDialoguePlanner } from "../providers/dialogue";
+import { getStoreDirections } from "../persistence/store-directions";
 import { withAudit } from "../repair/audit";
 import { getService } from "../repair/service";
-import { OpenAIModel } from "../providers/openai";
-import type { Proposal } from "../providers/model";
 import { getKnowledge } from "../knowledge/store";
 import { matchCustomAnswer } from "../providers/knowledge";
 const xml = (body: string) =>
@@ -105,7 +103,9 @@ export async function handleVoiceWebhook(
         conversation = await getConversation(call.conversation_id);
       if (!conversation) return new Response("Call not found", { status: 404 });
 
-      let state = conversation.state as State & { callbackPending?: boolean };
+      let state = conversation.state as AssistantState & {
+        callbackPending?: boolean;
+      };
       let answer: string, transfer: string | undefined;
       if (/pair staff/i.test(text)) {
         const code = String(randomInt(100000, 1000000));
@@ -170,29 +170,27 @@ export async function handleVoiceWebhook(
           if (session)
             actor = { role: session.role, grant: session.staff_grant };
         }
-        let intentHint: Proposal["intent"] | undefined;
-        if ((state.step ?? "start") === "start" && env.AI_PROVIDER_KEY)
-          try {
-            const proposal = await new OpenAIModel(
-              env.AI_PROVIDER_KEY,
-            ).proposeTurn(text);
-            intentHint = proposal.intent;
-          } catch {
-            /* Deterministic safe routing remains available during model outages. */
-          }
-        const result = await new ConversationEngine(
-          withAudit(getService(), call.conversation_id),
-          "connected",
-          async (pending) => {
-            await db.query("UPDATE conversations SET state=$2 WHERE id=$1", [
-              call.conversation_id,
-              JSON.stringify(pending),
-            ]);
+        const result = await runAssistantTurn(
+          {
+            service: withAudit(getService(), call.conversation_id),
+            mode: "connected",
+            onPending: async (pending: State) => {
+              await db.query("UPDATE conversations SET state=$2 WHERE id=$1", [
+                call.conversation_id,
+                JSON.stringify(pending),
+              ]);
+            },
+            knowledge: await getKnowledge(),
+            stores: (await getStoreDirections()).locations,
+            planner: createDialoguePlanner(env.AI_PROVIDER_KEY),
+            answerMatcher: (question, answers) =>
+              matchCustomAnswer(question, answers, env.AI_PROVIDER_KEY),
           },
-          await getKnowledge(),
-          (question, answers) =>
-            matchCustomAnswer(question, answers, env.AI_PROVIDER_KEY),
-        ).turn(state, text, actor, call.conversation_id, intentHint);
+          state,
+          text,
+          actor,
+          call.conversation_id,
+        );
         state = result.state;
         answer = result.text;
       }

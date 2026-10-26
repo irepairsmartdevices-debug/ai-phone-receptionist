@@ -1,0 +1,47 @@
+.form {
+  display: grid;
+  gap: 20px;
+}
+.store {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+  min-width: 0;
+}
+.store legend {
+  padding: 0 8px;
+  font-weight: 600;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.store button {
+  margin-top: 16px;
+}
+.actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.status,
+.error {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 8px;
+  line-height: 1.6;
+}
+.status {
+  background: #edf6eb;
+  color: #1d5e3e;
+}
+.error {
+  background: #fff0ef;
+  color: #9e2424;
+}
+@media (max-width: 600px) {
+  .store {
+    padding: 12px;
+  }
+  .actions button {
+    width: 100%;
+  }
+}

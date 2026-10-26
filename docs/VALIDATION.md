@@ -84,3 +84,25 @@ business facts were changed. A production browser regression saves a differently
 exact alternate and tests the reported customer wording through the live local API.
 Verified after final fixes: Node suite67/67, production knowledge browser suite4/4 (desktop/mobile CRUD,
 access checks and screenshot-wording regression), TypeScript and production build all passed.
+
+## Adaptive dialogue and grounded store directions
+
+Added shared test/voice orchestration with bounded redacted conversation memory, current device/model/issue
+corrections, context-aware booking offers and one useful follow-up at a time. AI plans are structured and
+validated; questions use supported observational forms, and business facts come from current compatible
+saved records or the existing source engine. Default Dallas landmarks were explicitly supplied by the owner;
+no street address was supplied or invented. Admin directions use a revisioned settings record and optimistic
+conflict checks. No database migration or live-phone deployment is part of this change.
+
+Review regressions cover stale model plans, numeric substring model mismatches, changed device family,
+negated/replaced issue, device-incompatible policies, unapproved claims in generated questions, similarly
+named locations, direction-selection interruptions of verification, and missing/cleared source addresses.
+All were reproduced before their fixes. Root also reproduced/fixed stale model memory after a pricing
+clarification, and added a stable accessible label for saved landmark notes after a browser reload.
+
+Live provider behavior with the user’s production key is not accessible from this cloud environment;
+provider contracts/error paths are tested with structured HTTP fixtures. Real provider and phone acceptance
+must be checked in the deployed app. No source repair-app changes were needed for this feature.
+Final verification: Node suite94/94; production browser suites10/10 (adaptive4, knowledge4, admin demo2),
+TypeScript and production build passed. No user street address was supplied while building; default Dallas
+notes contain only the supplied landmarks, and the admin form is ready for the full address.

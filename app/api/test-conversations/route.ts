@@ -12,10 +12,11 @@ import { withAudit } from "../../../src/repair/audit";
 import { getService } from "../../../src/repair/service";
 import { getKnowledge } from "../../../src/knowledge/store";
 import { matchCustomAnswer } from "../../../src/providers/knowledge";
-import {
-  ConversationEngine,
-  type State,
-} from "../../../src/conversation/engine";
+import { type State } from "../../../src/conversation/engine";
+import { runAssistantTurn } from "../../../src/conversation/assistant";
+import type { AssistantState } from "../../../src/conversation/assistant-types";
+import { createDialoguePlanner } from "../../../src/providers/dialogue";
+import { getStoreDirections } from "../../../src/persistence/store-directions";
 export const dynamic = "force-dynamic";
 const input = z
   .object({
@@ -55,19 +56,22 @@ export async function POST(request: NextRequest) {
         );
       await appendMessage(id, "user", body.text);
       const role = body.testRole;
-      const result = await new ConversationEngine(
-        withAudit(getService(), id),
-        fixture ? "fixture" : "connected",
-        async (pending) => {
-          await db.query("UPDATE conversations SET state=$2 WHERE id=$1", [
-            id,
-            JSON.stringify(pending),
-          ]);
+      const result = await runAssistantTurn(
+        {
+          service: withAudit(getService(), id),
+          mode: fixture ? "fixture" : "connected",
+          onPending: async (pending: State) => {
+            await db.query("UPDATE conversations SET state=$2 WHERE id=$1", [
+              id,
+              JSON.stringify(pending),
+            ]);
+          },
+          knowledge: await getKnowledge(),
+          stores: (await getStoreDirections()).locations,
+          planner: createDialoguePlanner(),
+          answerMatcher: matchCustomAnswer,
         },
-        await getKnowledge(),
-        matchCustomAnswer,
-      ).turn(
-        conversation.state as State,
+        conversation.state as AssistantState,
         body.text,
         {
           role,

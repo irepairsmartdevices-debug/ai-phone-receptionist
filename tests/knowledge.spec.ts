@@ -76,7 +76,7 @@ for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 900 });
     const suffix = randomUUID().slice(0, 8);
     const question = `Do you inspect liquid damage for browser ${suffix}?`;
-    const variant = `My browser ${suffix} phone got wet`;
+    const variant = `Can you inspect liquid damage for browser ${suffix}?`;
     const answer = `Bring browser ${suffix} in for an inspection.`;
     const updatedAnswer = `We will inspect browser ${suffix} before quoting.`;
     const category = `Phone browser ${suffix}`;

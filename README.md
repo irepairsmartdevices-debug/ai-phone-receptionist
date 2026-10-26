@@ -144,3 +144,25 @@ open list does not poll, while conversation turns still read current data.
 
 Regression `tests/catalog-freshness.integration.test.ts` verifies a source price change, a new model
 and offering, and removal using the same HTTP client and conversation engine without restarting.
+
+## Adaptive conversations and store directions
+
+The test receptionist and configured voice flow now share context-aware intake. A personal report such
+as “My device is wet” starts a conversation about missing device/model and useful symptom details.
+Already supplied details and corrections are retained across turns and reloads. Ordinary policy questions
+still use your saved answers. With `AI_PROVIDER_KEY` configured, the AI selects relevant approved facts
+and supported natural follow-up questions; deterministic intake remains available during provider outages.
+The assistant offers a repair visit or callback when it has enough information. A yes to an actual offer
+starts the normal booking process; an appointment still needs the existing review and confirmation.
+Prices, private tickets, status changes and booking confirmations remain under their existing workflows.
+AI/customer dialogue never rewrites your prices or policies.
+
+In **Settings → Store directions**, add/edit the location name, full address and landmark directions.
+Dallas initially has the owner-provided note: “Across from RedBird Mall, in the same complex as Hair Depot.”
+Its street address stays blank until the administrator supplies it. Enter the real address before using
+directions with customers. An optional repair-location link uses that location’s current source address;
+landmarks stay editable here. Cleared or unavailable linked addresses never reuse an old copied address.
+The receptionist asks which store when needed, remembers the selection, and supplies exact saved facts
+plus a Google Maps directions link when an address is known. It does not invent travel times or routes.
+The address can interrupt a repair conversation without losing the device context or ticket verification.
+No extra migration or new secret name is required.

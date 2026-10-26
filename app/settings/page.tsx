@@ -2,6 +2,10 @@ import Link from "next/link";
 import { db } from "../../src/persistence/db";
 import { requireAdmin } from "../../src/auth/guards";
 import SettingsForm from "./client";
+import StoreDirectionsForm from "./directions";
+import { getStoreDirections } from "../../src/persistence/store-directions";
+import { getService } from "../../src/repair/service";
+import type { Business } from "../../src/contracts/repair";
 export const dynamic = "force-dynamic";
 export default async function Settings() {
   const fixture = (process.env.RECEPTIONIST_MODE ?? "fixture") === "fixture";
@@ -14,6 +18,14 @@ export default async function Settings() {
     greeting: "Hi, I’m your AI repair assistant. How can I help you today?",
     transferNumber: "",
   };
+  const directions = await getStoreDirections();
+  let sourceLocations: Business["locations"] = [];
+  try {
+    const source = await getService().business();
+    if (source.ok) sourceLocations = source.value.locations;
+  } catch {
+    /* Manual store directions remain editable while the repair service is unavailable. */
+  }
   return (
     <>
       <div className="page-heading">
@@ -44,6 +56,16 @@ export default async function Settings() {
         </section>
         <section className="panel">
           <div className="section-heading">
+            <h2>Store directions</h2>
+            <span>ADMINISTRATOR</span>
+          </div>
+          <StoreDirectionsForm
+            initial={directions}
+            sourceLocations={sourceLocations}
+          />
+        </section>
+        <section className="panel">
+          <div className="section-heading">
             <h2>Connections & readiness</h2>
             <span>{fixture ? "DEMO WORKSPACE" : "CONNECTED WORKSPACE"}</span>
           </div>
@@ -60,7 +82,7 @@ export default async function Settings() {
             ],
             [
               "AI provider",
-              "Local test conversations use a deterministic assistant.",
+              "Uses your saved shop information to guide follow-up questions.",
               process.env.AI_PROVIDER_KEY
                 ? "Configured · live test required"
                 : "Test mode",
