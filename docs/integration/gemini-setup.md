@@ -1,7 +1,9 @@
 # Connect Google Gemini
 
 The receptionist supports Gemini through the shared simulator and phone dialogue
-engine. This uses Gemini generateContent; Gemini Live audio streaming is separate.
+engine. The exact `gemini-3.8-flash` model uses Google's Interactions API, matching
+the owner's Google AI Studio export. Other configured Gemini models retain the
+existing generateContent path. Gemini Live audio streaming is separate.
 The existing repair integration supplies current prices and exact model variants.
 
 ## Private Vercel settings
@@ -27,13 +29,27 @@ The existing repair integration supplies current prices and exact model variants
    model and symptoms, then ask about a known repair price. Compare with the repair
    app. The check proves provider access, not every conversation outcome.
 
-The explicit Gemini 3.8 Flash model uses `MEDIUM` thinking, matching the owner's
-successful Playground test after the deployed request flagged its earlier thinking
-level. Other models retain their existing settings. Google's [official JavaScript
+The explicit Gemini 3.8 Flash model uses `thinking_level: "medium"`, matching the
+owner's export. Its Interactions request uses `store:false`, `stream:false` and
+`background:false`, with the existing bounded public input and JSON schema. The
+adapter reads completed model-output text steps from raw REST, ignores thoughts,
+and rejects incomplete, errored, tool, nontext or ambiguous results. It does not
+use the SDK-only `output_text` convenience field or send previous interaction IDs.
+The exported Google Search tool is omitted because shop facts come from saved
+answers and the repair integration. Output budgets remain 512 tokens for checks
+and 2048 for plans; the exported 65,536-token default is not adopted. The earlier
+explicit temperature override is omitted to match the exported generation config.
+Other models retain their existing settings. Google's [official JavaScript
 SDK quickstart](https://github.com/googleapis/js-genai#quickstart) also uses the
 `gemini-flash-latest` alias, whose underlying model can change. Account/model availability must be verified with
 the connection check. API usage is billed or quota-limited by your Google account;
 no current price is assumed here.
+
+The request contract follows Google's [structured-output cookbook](https://github.com/google-gemini/cookbook/blob/b06b824cf2ea29f9543ffa14adcee68b5f934a9b/quickstarts/JSON_mode.ipynb)
+and [Interactions SDK types](https://github.com/googleapis/python-genai/blob/34b58fd1b2aa387dff5976bbefa1c1268958369f/google/genai/_gaos/types/interactions/createmodelinteraction.py).
+Google also documents generateContent for the same model. Switching APIs is a
+compatibility adjustment, not proof of the earlier timeout's cause. Verify the
+deployed connection with the private key before claiming live provider access.
 Use `AI_PROVIDER=openai` to deliberately restore the earlier OpenAI provider, or
 `AI_PROVIDER=none` for deterministic saved answers and workflows; redeploy changes.
 

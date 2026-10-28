@@ -299,3 +299,38 @@ build, TypeScript and whitespace checks passed; independent review found no mate
 issues. Public documentation still broadly permits MINIMAL for Gemini 3 Flash, so
 this is a scoped compatibility adjustment rather than a universal support claim.
 The deployed API check and real multi-turn conversation remain to be verified.
+
+## Gemini 3.8 Interactions compatibility (2026-10-28)
+
+The owner's AI Studio export uses `client.interactions.create` with
+`thinking_level: medium`. The deployed generateContent request last timed out at
+its 30-second app deadline without response headers. Google's current cookbook
+recommends Interactions and documents its structured JSON format; generateContent
+is also documented for the same model, so the endpoint difference is not a proven
+root cause.
+
+The exact `gemini-3.8-flash` model now uses a stateless Interactions REST adapter
+for both health checks and planning. It retains the 512/2048 output caps and
+30/8-second deadlines, omits the prior temperature override to match the export,
+and sends no tools, previous interaction ID, background work or automatic retry.
+Other configured Gemini models and OpenAI retain their existing paths. Raw
+completed model-output text is validated; thoughts are excluded and incomplete,
+errored, nontext, tool, oversized or ambiguous responses fail closed. Public input
+redaction and local approved-ID/plan validation remain in force.
+
+Validation:
+
+- Clean baseline: `npm test`, 180/180 passed.
+- New Interactions tests failed against the prior endpoint/parser, then passed
+  after the adapter change; success fixtures use raw REST `steps`, with no
+  SDK-only `output_text` field.
+- Final `npm test`: 186/186 passed, including simulated signed voice intake,
+  public/private history boundaries, current catalog IDs, safe error diagnostics,
+  and a real nine-second health response with the customer planner's shorter
+  fallback.
+- Production `npm run build`, separate `npm run typecheck`, and whitespace checks: passed.
+- Independent adapter/API-contract review: no material findings; reviewer also
+  ran the seven new tests successfully.
+
+No real Google request was sent from this cloud environment. Live access with the
+owner's private Production key still requires a fresh deployed connection check.

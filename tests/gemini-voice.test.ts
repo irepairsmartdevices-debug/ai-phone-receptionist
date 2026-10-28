@@ -47,16 +47,17 @@ test("signed voice turns use the selected Gemini credential and persist semantic
   const previous = globalThis.fetch;
   let requests = 0;
   globalThis.fetch = async (url, init) => {
-    assert.match(String(url), /^https:\/\/generativelanguage.googleapis.com\//);
+    assert.equal(
+      String(url),
+      "https://generativelanguage.googleapis.com/v1beta/interactions",
+    );
     assert.equal(
       new Headers(init?.headers).get("x-goog-api-key"),
       env.GEMINI_API_KEY,
     );
     assert.ok(!JSON.stringify(init?.headers).includes(env.AI_PROVIDER_KEY));
     requests++;
-    const input = JSON.parse(
-      JSON.parse(String(init?.body)).contents[0].parts[0].text,
-    );
+    const input = JSON.parse(JSON.parse(String(init?.body)).input);
     const suppliedModel = input.text === "Fairphone 5";
     const plan = {
       action: suppliedModel ? "ask_details" : "ask_device",
@@ -73,10 +74,11 @@ test("signed voice turns use the selected Gemini credential and persist semantic
       reset: null,
     };
     return Response.json({
-      candidates: [
+      status: "completed",
+      steps: [
         {
-          content: { parts: [{ text: JSON.stringify(plan) }] },
-          finishReason: "STOP",
+          type: "model_output",
+          content: [{ type: "text", text: JSON.stringify(plan) }],
         },
       ],
     });

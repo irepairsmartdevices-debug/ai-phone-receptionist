@@ -5,6 +5,7 @@ import type {
   DialogueCatalogItem,
 } from "../conversation/assistant-types";
 import { AIProviderError, responseFailure, readProviderJSON } from "./config";
+import { generateGeminiInteractionJSON } from "./gemini-interactions";
 
 const actions = [
   "ask_device",
@@ -233,6 +234,17 @@ export async function generateGeminiJSON(
   maxOutputTokens = 2048,
   timeoutMs = 8000,
 ): Promise<unknown> {
+  if (model === "gemini-3.8-flash")
+    return generateGeminiInteractionJSON(
+      key,
+      model,
+      system,
+      data,
+      schema,
+      fetcher,
+      maxOutputTokens,
+      timeoutMs,
+    );
   const response = await fetcher(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
     {
@@ -246,13 +258,11 @@ export async function generateGeminiJSON(
         generationConfig: {
           temperature: 0,
           maxOutputTokens,
-          // Match the successful Gemini 3.8 Playground test's MEDIUM level.
-          // Other recognized Flash models retain their existing setting.
+          // Preserve the existing settings for legacy generateContent models.
           ...(/^gemini-3(?:\.\d+)?-flash(?:-preview(?:-.+)?)?$/.test(model)
             ? {
                 thinkingConfig: {
-                  thinkingLevel:
-                    model === "gemini-3.8-flash" ? "MEDIUM" : "MINIMAL",
+                  thinkingLevel: "MINIMAL",
                 },
               }
             : {}),

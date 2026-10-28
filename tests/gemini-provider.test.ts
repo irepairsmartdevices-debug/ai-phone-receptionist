@@ -9,6 +9,8 @@ import {
 const env = {
   AI_PROVIDER: "gemini",
   GEMINI_API_KEY: "google-test-key",
+  // Keep generateContent coverage explicit; the deployed default has its own REST tests.
+  GEMINI_MODEL: "gemini-custom-preview",
   AI_PROVIDER_KEY: "openai-test-key",
 };
 const answers = [
@@ -71,11 +73,14 @@ test("selection preserves legacy OpenAI and isolates selected Gemini credentials
     model: "gpt-4.1-mini",
     configured: true,
   });
-  assert.deepEqual(getAIStatus(env), {
-    provider: "gemini",
-    model: "gemini-3.8-flash",
-    configured: true,
-  });
+  assert.deepEqual(
+    getAIStatus({ AI_PROVIDER: "gemini", GEMINI_API_KEY: "google" }),
+    {
+      provider: "gemini",
+      model: "gemini-3.8-flash",
+      configured: true,
+    },
+  );
   assert.deepEqual(
     getAIStatus({ ...env, GEMINI_MODEL: "gemini-custom-preview" }),
     { provider: "gemini", model: "gemini-custom-preview", configured: true },
@@ -355,7 +360,7 @@ test("connection check uses a fixed small independent prompt and returns safe st
   });
   assert.deepEqual(result, {
     provider: "gemini",
-    model: "gemini-3.8-flash",
+    model: "gemini-custom-preview",
     configured: true,
     ok: true,
   });
@@ -649,60 +654,7 @@ test("catalog and answer budgets reject references omitted from bounded public c
   assert.doesNotMatch(JSON.stringify(body), /privatePrice/);
 });
 
-test("Gemini 3.8 can complete a check and plan when MINIMAL thinking is rejected", async () => {
-  let calls = 0;
-  const provider: typeof fetch = async (_url, init) => {
-    calls++;
-    const body = JSON.parse(String(init?.body));
-    if (body.generationConfig.thinkingConfig?.thinkingLevel === "MINIMAL")
-      return Response.json(
-        {
-          error: {
-            status: "INVALID_ARGUMENT",
-            message: "Unsupported thinking_level for this model",
-          },
-        },
-        { status: 400 },
-      );
-    const isCheck =
-      JSON.parse(body.contents[0].parts[0].text).check === "connection";
-    return gemini(isCheck ? { ok: true } : plan);
-  };
-  const settings = { ...env, GEMINI_MODEL: "gemini-3.8-flash" };
-  assert.equal((await checkAIConnection(settings, provider)).ok, true);
-  assert.deepEqual(
-    await createAssistantProviders(settings, provider).planner(input),
-    plan,
-  );
-  assert.equal(calls, 2);
-});
-
-test("Gemini 3.8 uses MEDIUM while other model thinking settings remain compatible", async () => {
-  const bodies: any[] = [];
-  const planner = createAssistantProviders(env, async (_url, init) => {
-    bodies.push(JSON.parse(String(init?.body)));
-    return gemini(plan);
-  });
-  assert.deepEqual(await planner.planner(input), plan);
-  assert.equal(
-    (
-      await checkAIConnection(env, async (_url, init) => {
-        bodies.push(JSON.parse(String(init?.body)));
-        return gemini({ ok: true });
-      })
-    ).ok,
-    true,
-  );
-  assert.equal(
-    bodies[0].generationConfig.thinkingConfig?.thinkingLevel,
-    "MEDIUM",
-  );
-  assert.equal(
-    bodies[1].generationConfig.thinkingConfig?.thinkingLevel,
-    "MEDIUM",
-  );
-  assert.ok(bodies[1].generationConfig.maxOutputTokens >= 256);
-  assert.ok(bodies[1].generationConfig.maxOutputTokens <= 512);
+test("legacy model thinking settings remain compatible", async () => {
   await checkAIConnection(
     { ...env, GEMINI_MODEL: "gemini-3.7-flash" },
     async (_url, init) => {

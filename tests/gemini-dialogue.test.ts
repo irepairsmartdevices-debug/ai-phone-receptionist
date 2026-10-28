@@ -440,12 +440,13 @@ test("completed private verification and legacy history never reach a later Gemi
   const fetcher: typeof fetch = async (_url, init) => {
     requestBodies.push(String(init?.body));
     return Response.json({
-      candidates: [
+      status: "completed",
+      steps: [
         {
-          finishReason: "STOP",
-          content: {
-            parts: [{ text: JSON.stringify(plan({ nextGoal: "power" })) }],
-          },
+          type: "model_output",
+          content: [
+            { type: "text", text: JSON.stringify(plan({ nextGoal: "power" })) },
+          ],
         },
       ],
     });
@@ -468,9 +469,7 @@ test("completed private verification and legacy history never reach a later Gemi
     requestBodies[0],
     /PrivateCustomerDevice|PrivateRepairService|PrivateCollectionLocation|PrivateVerificationUserText|Ticket 1001|123456/,
   );
-  const publicInput = JSON.parse(
-    JSON.parse(requestBodies[0]).contents[0].parts[0].text,
-  );
+  const publicInput = JSON.parse(JSON.parse(requestBodies[0]).input);
   assert.ok(
     publicInput.memory.history.some(
       (entry: { text: string }) =>
@@ -598,10 +597,11 @@ test("legacy history is omitted at the provider boundary while marked public his
     async (_url, init) => {
       sent = String(init?.body);
       return Response.json({
-        candidates: [
+        status: "completed",
+        steps: [
           {
-            finishReason: "STOP",
-            content: { parts: [{ text: JSON.stringify(plan({})) }] },
+            type: "model_output",
+            content: [{ type: "text", text: JSON.stringify(plan({})) }],
           },
         ],
       });

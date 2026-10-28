@@ -32,8 +32,12 @@ after(async () => {
 });
 const good = () =>
   Response.json({
-    candidates: [
-      { content: { parts: [{ text: '{"ok":true}' }] }, finishReason: "STOP" },
+    status: "completed",
+    steps: [
+      {
+        type: "model_output",
+        content: [{ type: "text", text: '{"ok":true}' }],
+      },
     ],
   });
 
