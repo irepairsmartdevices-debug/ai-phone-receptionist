@@ -50,6 +50,12 @@ are limited to a fixed network-error allowlist; raw provider messages, URLs,
 request bodies and credentials are never included. These details observe the same
 single request and do not trigger extra requests.
 
+For HTTP 400 responses, details also show recognized provider status codes,
+recognized API/project rejection reasons, and known request-setting names when
+Google supplies them. Values come from fixed allowlists; error descriptions and
+arbitrary field names are discarded. A setting mentioned in an error is a
+diagnostic hint, not a claim that changing it will resolve the request.
+
 Checks are administrator-only and protected by the normal same-origin rule. A
 45-second shared reservation prevents concurrent button clicks from sending repeated
 paid requests. Gemini connection tests allow up to 30 seconds for the provider;

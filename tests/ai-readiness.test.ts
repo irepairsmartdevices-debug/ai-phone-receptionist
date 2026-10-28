@@ -173,6 +173,123 @@ test("connection details distinguish a provider timeout and survive reload witho
   );
 });
 
+test("Google request errors retain only safe status and request-setting hints", async () => {
+  const isolated = { ...env, GEMINI_API_KEY: "private-request-hint-key" };
+  const checked = await runAIConnectionCheck(isolated, async () =>
+    Response.json(
+      {
+        error: {
+          status: "INVALID_ARGUMENT",
+          message: "private-message-with-a-key-and-customer-data",
+          details: [
+            {
+              "@type": "type.googleapis.com/google.rpc.BadRequest",
+              fieldViolations: [
+                {
+                  field: "generation_config.thinking_config.thinking_level",
+                  description: "private-rejection-description",
+                },
+                {
+                  field: "private-arbitrary-field",
+                  description: "private-field-description",
+                },
+              ],
+            },
+          ],
+        },
+      },
+      { status: 400 },
+    ),
+  );
+  assert.equal(checked.readiness.lastCheck?.reason, "model");
+  assert.equal(
+    checked.readiness.lastCheck?.diagnostic?.providerCode,
+    "INVALID_ARGUMENT",
+  );
+  assert.deepEqual(checked.readiness.lastCheck?.diagnostic?.parameters, [
+    "thinking_level",
+  ]);
+  assert.doesNotMatch(
+    JSON.stringify(checked),
+    /private-request|private-message|private-rejection|private-arbitrary|private-field/,
+  );
+  assert.deepEqual(
+    (await getAIReadiness(isolated)).lastCheck?.diagnostic,
+    checked.readiness.lastCheck?.diagnostic,
+  );
+});
+
+test("Google API-key rejection details remain explicit without exposing the key", async () => {
+  const isolated = { ...env, GEMINI_API_KEY: "private-request-key-rejection" };
+  const checked = await runAIConnectionCheck(isolated, async () =>
+    Response.json(
+      {
+        error: {
+          status: "INVALID_ARGUMENT",
+          message: "private-request-key-rejection",
+          details: [
+            {
+              "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+              reason: "API_KEY_INVALID",
+              metadata: { secret: "private-key-metadata" },
+            },
+          ],
+        },
+      },
+      { status: 400 },
+    ),
+  );
+  assert.equal(checked.readiness.lastCheck?.reason, "authentication");
+  assert.equal(
+    checked.readiness.lastCheck?.diagnostic?.providerReason,
+    "API_KEY_INVALID",
+  );
+  assert.doesNotMatch(
+    JSON.stringify(checked),
+    /private-request|private-key-metadata|metadata/,
+  );
+});
+
+test("unknown provider error values are omitted and only known parameter names are reported", async () => {
+  const isolated = {
+    ...env,
+    GEMINI_API_KEY: "private-unknown-provider-details",
+  };
+  const checked = await runAIConnectionCheck(isolated, async () =>
+    Response.json(
+      {
+        error: {
+          status: "private-provider-status",
+          message:
+            'Invalid payload field "responseJsonSchema" private-provider-message',
+          details: [
+            {
+              reason: "private-provider-reason",
+              fieldViolations: [{ field: "private-provider-field" }],
+            },
+          ],
+        },
+      },
+      { status: 400 },
+    ),
+  );
+  assert.equal(
+    checked.readiness.lastCheck?.diagnostic?.providerCode,
+    undefined,
+  );
+  assert.equal(
+    checked.readiness.lastCheck?.diagnostic?.providerReason,
+    undefined,
+  );
+  assert.deepEqual(checked.readiness.lastCheck?.diagnostic?.parameters, [
+    "response_schema",
+  ]);
+  assert.doesNotMatch(
+    JSON.stringify(checked),
+    /private-provider|private-unknown/,
+  );
+});
+
 test("connection details identify app deadlines before headers and while reading a body", async (t) => {
   t.mock.method(AbortSignal, "timeout", () =>
     AbortSignal.abort(

@@ -257,7 +257,7 @@ export async function generateGeminiJSON(
       }),
     },
   );
-  if (!response.ok) throw new AIProviderError(await responseFailure(response));
+  if (!response.ok) throw await responseFailure(response);
   const parsed = responseSchema.safeParse(await readProviderJSON(response));
   if (!parsed.success) throw new AIProviderError("response");
   const raw = parsed.data;

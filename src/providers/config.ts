@@ -54,7 +54,10 @@ export function getAIStatus(env: AIEnvironment = process.env): AIStatus {
 }
 
 export class AIProviderError extends Error {
-  constructor(readonly reason: AIErrorReason) {
+  constructor(
+    readonly reason: AIErrorReason,
+    readonly details?: ProviderErrorDetails,
+  ) {
     super(`AI provider ${reason}`);
     this.name = "AIProviderError";
   }
@@ -71,37 +74,23 @@ export function httpFailure(status: number): AIErrorReason {
 /** Google's rejected API keys can use HTTP 400 with structured ErrorInfo. */
 export async function responseFailure(
   response: Response,
-): Promise<AIErrorReason> {
+): Promise<AIProviderError> {
   const fallback = httpFailure(response.status);
-  if (response.status !== 400) return fallback;
+  if (response.status !== 400) return new AIProviderError(fallback);
+  let details: ProviderErrorDetails | undefined;
   try {
-    const raw = (await readProviderJSON(response)) as {
-      error?: { details?: unknown };
-    };
-    const details = raw?.error?.details;
+    details = readProviderErrorDetails(await readProviderJSON(response));
     if (
-      Array.isArray(details) &&
-      details.some(
-        (detail) =>
-          detail &&
-          typeof detail === "object" &&
-          "reason" in detail &&
-          [
-            "API_KEY_INVALID",
-            "API_KEY_EXPIRED",
-            "API_KEY_SERVICE_BLOCKED",
-            "API_KEY_HTTP_REFERRER_BLOCKED",
-            "API_KEY_IP_ADDRESS_BLOCKED",
-          ].includes(String(detail.reason)),
-      )
+      details?.providerReason &&
+      apiKeyErrorReasons.some((reason) => reason === details?.providerReason)
     )
-      return "authentication";
+      return new AIProviderError("authentication", details);
   } catch (error) {
     // Transport failures while reading an error body are not rejected models.
     if (!(error instanceof AIProviderError)) throw error;
     /* Ignore private error bodies; only the safe status category escapes. */
   }
-  return fallback;
+  return new AIProviderError(fallback, details);
 }
 
 export function safeFailure(error: unknown): AIErrorReason {
@@ -146,3 +135,8 @@ export async function readProviderJSON(response: Response): Promise<unknown> {
     throw new AIProviderError("response");
   }
 }
+import {
+  apiKeyErrorReasons,
+  readProviderErrorDetails,
+  type ProviderErrorDetails,
+} from "./failure-details";

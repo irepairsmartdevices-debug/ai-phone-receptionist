@@ -1,6 +1,10 @@
 import { z } from "zod";
 import { checkAIConnection } from "./assistant";
 import { AIProviderError, type AIEnvironment } from "./config";
+import {
+  providerErrorDetailsSchema,
+  type ProviderErrorDetails,
+} from "./failure-details";
 
 const networkCodes = [
   "ENOTFOUND",
@@ -19,6 +23,7 @@ const networkCodes = [
 
 // Only these bounded, non-secret facts may be stored or returned to the admin.
 export const connectionDiagnosticSchema = z.object({
+  ...providerErrorDetailsSchema.shape,
   elapsedMs: z.number().int().min(0).max(3_600_000),
   phase: z.enum(["request", "response"]),
   source: z.enum([
@@ -59,6 +64,7 @@ export async function traceConnectionCheck(
     httpStatus?: number;
     networkCode?: ConnectionDiagnostic["networkCode"];
     transportFailure: boolean;
+    providerDetails?: ProviderErrorDetails;
   } = { started: false, phase: "request", transportFailure: false };
   const result = await checkAIConnection(
     env,
@@ -74,6 +80,8 @@ export async function traceConnectionCheck(
     (error) => {
       // Observe both connecting failures and later response-body read failures.
       observed.transportFailure = !(error instanceof AIProviderError);
+      if (error instanceof AIProviderError)
+        observed.providerDetails = error.details;
       observed.networkCode = safeNetworkCode(error);
     },
   );
@@ -92,6 +100,7 @@ export async function traceConnectionCheck(
               ? "response"
               : "transport";
   const diagnostic = connectionDiagnosticSchema.parse({
+    ...observed.providerDetails,
     elapsedMs: Math.min(
       3_600_000,
       Math.max(0, Math.round(performance.now() - startedAt)),

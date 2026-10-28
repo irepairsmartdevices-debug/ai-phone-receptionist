@@ -173,8 +173,7 @@ export async function checkAIConnection(
           }),
         },
       );
-      if (!response.ok)
-        throw new AIProviderError(await responseFailure(response));
+      if (!response.ok) throw await responseFailure(response);
       const raw = (await readProviderJSON(response)) as {
         choices?: {
           finish_reason?: string;

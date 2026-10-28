@@ -263,3 +263,24 @@ after headers. Interrupted transports remain distinct from invalid JSON/schema
 responses even when their network code is not exposed. No material review findings
 remain. Live Google account access and first-attempt production login still need
 the owner's deployed checks; no live Google request ran in this workspace.
+
+## 2026-10-28: Preserve safe Gemini request-rejection details
+
+The owner reported successful plain-text Gemini 3.8 Flash output in AI Studio,
+then a deployed HTTP 400 in 0.2 seconds using the same explicit model ID. Current
+official Google REST/SDK references support the app's model, MINIMAL thinking,
+temperature and JSON-schema settings; no additional contract mismatch was found.
+The deployed rejection's cause remains unknown without its error details.
+
+The existing bounded HTTP 400 body read now preserves only fixed provider status
+codes, known ErrorInfo reasons and up to four known parameter hints. Arbitrary
+messages, descriptions, field names and metadata are discarded. The admin panel
+renders those safe details; this adds no request, retry, model or timeout change.
+Other HTTP failures retain their existing fast classification and body handling.
+
+Verification: three new regressions observed RED then GREEN; full Node suite
+179/179; production build, TypeScript and whitespace checks passed. Local browser
+QA against a synthetic HTTP 400 verified rendering, reload persistence, private
+data omission and 390px layout. Review's optional-array TypeScript finding was
+fixed before publishing, with no remaining material findings. Live API access
+and the actual Google rejection still require the owner's next deployed check.

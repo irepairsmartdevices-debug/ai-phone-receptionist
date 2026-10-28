@@ -18,6 +18,16 @@ const reasons: Record<string, string> = {
   response:
     "The AI provider returned an unsupported response. Check the model and try again.",
 };
+const parameterNames = {
+  thinking_level: "thinking level",
+  thinking_budget: "thinking budget",
+  response_schema: "structured response schema",
+  response_mime_type: "response format",
+  max_output_tokens: "output token limit",
+  temperature: "temperature",
+  system_instruction: "system instructions",
+  generation_config: "generation settings",
+};
 export default function AIConnection({ initial }: { initial: AIReadiness }) {
   const [state, setState] = useState(initial);
   const [busy, setBusy] = useState(false);
@@ -118,6 +128,20 @@ export default function AIConnection({ initial }: { initial: AIReadiness }) {
           )}
           {state.lastCheck.diagnostic.networkCode && (
             <p>Connection code: {state.lastCheck.diagnostic.networkCode}</p>
+          )}
+          {state.lastCheck.diagnostic.providerCode && (
+            <p>Provider code: {state.lastCheck.diagnostic.providerCode}</p>
+          )}
+          {state.lastCheck.diagnostic.providerReason && (
+            <p>Provider reason: {state.lastCheck.diagnostic.providerReason}</p>
+          )}
+          {Boolean(state.lastCheck.diagnostic.parameters?.length) && (
+            <p>
+              Setting mentioned:{" "}
+              {state.lastCheck.diagnostic.parameters
+                ?.map((name) => parameterNames[name])
+                .join(", ")}
+            </p>
           )}
         </details>
       )}
