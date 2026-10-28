@@ -211,3 +211,24 @@ to this workspace, and managed network policy does not permit the live Gemini ho
 The deployed administrator **Test Gemini connection** action must pass after private
 Production configuration and redeployment. Gemini generateContent is distinct from
 Gemini Live audio; phone-number setup remains separate.
+
+## 2026-10-28: Gemini connection-check timeout
+
+The owner's deployed check with `gemini-flash-latest` reported a timeout. Code
+inspection found the administrator check shared the eight-second conversation
+deadline. A delayed nine-second transport reproduced premature check failure;
+the regression failed before the fix and passed afterward. Gemini checks now
+allow 30 seconds, while conversation requests retain the eight-second fallback.
+The atomic check reservation is 45 seconds to cover completion, and the built
+Next.js function manifest confirms a 60-second route duration allowance.
+
+Verification: `npm test` passed 166/166; TypeScript, production build and diff
+whitespace checks passed. A second RED/GREEN regression proves another check is
+blocked at 31 seconds while the first is settling. Independent review found no
+material issues. No automatic retry, provider fallback or credential disclosure
+was added. The setup guide uses Google's documented Flash alias rather than
+assuming a particular version is available to this project.
+
+These checks use local synthetic transport. The screenshot alone cannot distinguish
+the app's abort from Google's own timeout; a deployed connection check is still
+required to establish live access. No live Google request ran in this workspace.

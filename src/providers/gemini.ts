@@ -231,13 +231,14 @@ export async function generateGeminiJSON(
   schema: object,
   fetcher: typeof fetch,
   maxOutputTokens = 2048,
+  timeoutMs = 8000,
 ): Promise<unknown> {
   const response = await fetcher(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
     {
       method: "POST",
       redirect: "error",
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(timeoutMs),
       headers: { "Content-Type": "application/json", "x-goog-api-key": key },
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: system }] },
@@ -333,6 +334,8 @@ export async function checkGeminiConnection(
     },
     fetcher,
     512,
+    // Admin diagnostics can wait longer than a customer conversation.
+    30_000,
   );
   if (
     !z

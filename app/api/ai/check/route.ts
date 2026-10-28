@@ -4,6 +4,8 @@ import {
 } from "../../../../src/auth/guards";
 import { runAIConnectionCheck } from "../../../../src/providers/readiness";
 export const dynamic = "force-dynamic";
+// Leave room for authorization and persistence around the bounded provider check.
+export const maxDuration = 60;
 export async function POST(request: Request) {
   try {
     assertMutationOrigin(request);

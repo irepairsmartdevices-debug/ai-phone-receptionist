@@ -41,7 +41,7 @@ export default function AIConnection({ initial }: { initial: AIReadiness }) {
         setState(data);
       if (response.status === 429)
         setMessage(
-          `Please wait ${response.headers.get("Retry-After") ?? "30"} seconds before another check.`,
+          `Please wait ${response.headers.get("Retry-After") ?? "45"} seconds before another check.`,
         );
       else if (!response.ok && data?.error)
         setMessage(
@@ -99,8 +99,8 @@ export default function AIConnection({ initial }: { initial: AIReadiness }) {
         {busy ? "Checking…" : `Test ${name} connection`}
       </button>
       <p className="muted">
-        This check sends a small test request to your selected AI provider. Your
-        API key stays private.
+        Allow up to 30 seconds for this check. It sends a small test request to
+        your selected AI provider. Your API key stays private.
       </p>
     </section>
   );

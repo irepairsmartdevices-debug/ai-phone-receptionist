@@ -16,7 +16,7 @@ The existing repair integration supplies current prices and exact model variants
 | --- | --- |
 | `AI_PROVIDER` | `gemini` |
 | `GEMINI_API_KEY` | Your private Google key; choose **Secret** |
-| `GEMINI_MODEL` | `gemini-3.8-flash`, or a supported model available in your project |
+| `GEMINI_MODEL` | `gemini-flash-latest`, or a supported version available in your project |
 
 3. Save and redeploy the receptionist. Keep its repair-service, database and
    authentication settings. Its earlier OpenAI key can remain for explicit rollback;
@@ -27,9 +27,10 @@ The existing repair integration supplies current prices and exact model variants
    model and symptoms, then ask about a known repair price. Compare with the repair
    app. The check proves provider access, not every conversation outcome.
 
-The model example comes from Google's official cookbook checked during development.
-Account/model availability must be verified with the connection check. API usage is
-billed or quota-limited by your Google account; no current price is assumed here.
+The model alias comes from [Google's official JavaScript SDK quickstart](https://github.com/googleapis/js-genai#quickstart).
+Its underlying model can change. Account/model availability must be verified with
+the connection check. API usage is billed or quota-limited by your Google account;
+no current price is assumed here.
 Use `AI_PROVIDER=openai` to deliberately restore the earlier OpenAI provider, or
 `AI_PROVIDER=none` for deterministic saved answers and workflows; redeploy changes.
 
@@ -43,9 +44,12 @@ Use `AI_PROVIDER=openai` to deliberately restore the earlier OpenAI provider, or
 - Unsupported response: check the model supports structured JSON output.
 
 Checks are administrator-only and protected by the normal same-origin rule. A
-30-second shared reservation prevents concurrent button clicks from sending repeated
-paid requests. Stored results contain a private configuration fingerprint and safe
-status fields, not the API key. The browser sees only the provider/model and check
+45-second shared reservation prevents concurrent button clicks from sending repeated
+paid requests. Gemini connection tests allow up to 30 seconds for the provider;
+customer conversation requests retain their eight-second fallback deadline. The
+check route allows additional time for authorization and saving the result. Stored
+results contain a private configuration fingerprint and safe status fields, not
+the API key. The browser sees only the provider/model and check
 result. Changing the selected key/model invalidates an earlier success. Errors do
 not expose raw provider responses. A last successful check is historical evidence;
 it is not a guarantee of future quota, uptime, or model access.

@@ -102,7 +102,8 @@ export async function runAIConnectionCheck(
       signature: currentSignature,
       requestId: randomUUID(),
       startedAt: now,
-      nextCheckAt: now + 30_000,
+      // Cover the 30-second provider check plus completion/persistence margin.
+      nextCheckAt: now + 45_000,
       lastCheck:
         parsed.success && parsed.data.signature === currentSignature
           ? parsed.data.lastCheck

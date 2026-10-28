@@ -68,6 +68,41 @@ test("parallel or repeated connection checks reserve one provider request and re
   assert.ok(results.find((r) => r.status === 429)?.retryAfter);
 });
 
+test("a slow check remains reserved while its longer provider deadline is settling", async (t) => {
+  const isolated = { ...env, GEMINI_API_KEY: "private-slow-reservation-key" };
+  let now = Date.now();
+  t.mock.method(Date, "now", () => now);
+  let release!: () => void;
+  let started!: () => void;
+  const waiting = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const reachedProvider = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  let calls = 0;
+  const first = runAIConnectionCheck(isolated, async () => {
+    calls++;
+    started();
+    await waiting;
+    return good();
+  });
+  await reachedProvider;
+  try {
+    now += 31_000;
+    const second = await runAIConnectionCheck(isolated, async () => {
+      calls++;
+      return good();
+    });
+    assert.equal(second.status, 429);
+    assert.ok(second.retryAfter && second.retryAfter > 0);
+    assert.equal(calls, 1);
+  } finally {
+    release();
+    await first;
+  }
+});
+
 test("changed key or model invalidates old success and a failed check never leaks raw provider errors", async () => {
   const changed = { ...env, GEMINI_API_KEY: "private-changed-check-key" };
   assert.equal((await getAIReadiness(changed)).lastCheck, null);
@@ -109,7 +144,7 @@ test("a later failed check replaces a previous success for the same key", async 
   const same = { ...env, GEMINI_API_KEY: "private-same-key-recheck" };
   await runAIConnectionCheck(same, async () => good());
   assert.equal((await getAIReadiness(same)).lastCheck?.ok, true);
-  // End this local test's reservation without waiting thirty wall-clock seconds.
+  // End this local test's reservation without waiting for the cooldown.
   await db.query(
     "UPDATE settings SET value=jsonb_set(value,'{nextCheckAt}','0'::jsonb) WHERE key='ai:connection-check'",
   );

@@ -362,6 +362,52 @@ test("connection check uses a fixed small independent prompt and returns safe st
   assert.equal(calls, 1);
 });
 
+test("a slow Gemini check can succeed without extending the live conversation wait", async () => {
+  const settings = { ...env, GEMINI_MODEL: "gemini-flash-latest" };
+  let calls = 0;
+  const slowProvider: typeof fetch = async (_url, init) => {
+    calls++;
+    const isCheck =
+      JSON.parse(String(init?.body)).contents[0].parts[0].text ===
+      '{"check":"connection"}';
+    const signal = init?.signal;
+    assert.ok(signal);
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        signal.removeEventListener("abort", abort);
+        resolve();
+      }, 9_000);
+      function abort() {
+        clearTimeout(timer);
+        reject(signal!.reason);
+      }
+      if (signal.aborted) abort();
+      else signal.addEventListener("abort", abort, { once: true });
+    });
+    return gemini(isCheck ? { ok: true } : plan);
+  };
+  const providers = createAssistantProviders(settings, slowProvider);
+  const [check, conversation] = await Promise.all([
+    checkAIConnection(settings, slowProvider),
+    providers.planner(input),
+  ]);
+  assert.equal(
+    check.ok,
+    true,
+    "the admin check must allow a response after eight seconds",
+  );
+  assert.equal(
+    conversation,
+    null,
+    "a live conversation must keep its short fallback deadline",
+  );
+  assert.equal(
+    calls,
+    2,
+    "each independent operation must send only one request",
+  );
+});
+
 test("connection check safely classifies authentication, model, quota, timeout and response failures without retries", async () => {
   for (const [status, reason] of [
     [400, "model"],
