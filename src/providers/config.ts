@@ -96,7 +96,9 @@ export async function responseFailure(
       )
     )
       return "authentication";
-  } catch {
+  } catch (error) {
+    // Transport failures while reading an error body are not rejected models.
+    if (!(error instanceof AIProviderError)) throw error;
     /* Ignore private error bodies; only the safe status category escapes. */
   }
   return fallback;

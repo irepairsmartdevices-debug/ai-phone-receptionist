@@ -362,6 +362,21 @@ test("connection check uses a fixed small independent prompt and returns safe st
   assert.equal(calls, 1);
 });
 
+test("the Gemini check uses the documented JSON-schema enum types", async () => {
+  const result = await checkAIConnection(env, async (_url, init) => {
+    const schema = JSON.parse(String(init?.body)).generationConfig
+      .responseJsonSchema;
+    // The Gemini API documents enum support for string and number schemas.
+    if (schema.properties.ok.enum && schema.properties.ok.type === "boolean")
+      return Response.json(
+        { error: { status: "INVALID_ARGUMENT" } },
+        { status: 400 },
+      );
+    return gemini({ ok: true });
+  });
+  assert.equal(result.ok, true);
+});
+
 test("a slow Gemini check can succeed without extending the live conversation wait", async () => {
   const settings = { ...env, GEMINI_MODEL: "gemini-flash-latest" };
   let calls = 0;

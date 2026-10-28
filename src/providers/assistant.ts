@@ -125,6 +125,7 @@ export function createAssistantProviders(
 export async function checkAIConnection(
   env: AIEnvironment = process.env,
   fetcher: typeof fetch = fetch,
+  observeFailure?: (error: unknown) => void,
 ): Promise<AIConnectionResult> {
   const status = getAIStatus(env);
   if (!status.configured) return { ...status, ok: false };
@@ -199,6 +200,7 @@ export async function checkAIConnection(
     }
     return { ...status, ok: true };
   } catch (error) {
+    observeFailure?.(error);
     return { ...status, ok: false, reason: safeFailure(error) };
   }
 }

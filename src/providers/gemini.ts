@@ -328,7 +328,9 @@ export async function checkGeminiConnection(
     { check: "connection" },
     {
       type: "object",
-      properties: { ok: { type: "boolean", enum: [true] } },
+      // Gemini's documented JSON-schema enums support strings and numbers.
+      // Validate the true value locally after the provider returns a boolean.
+      properties: { ok: { type: "boolean" } },
       required: ["ok"],
       additionalProperties: false,
     },

@@ -8,10 +8,11 @@ const reasons: Record<string, string> = {
   authentication:
     "The provider rejected the API key. Check its access, then redeploy after updating it.",
   model:
-    "This model is unavailable for your account. Check the configured model in Vercel.",
+    "The provider rejected the model or request settings. Check the configured model in Vercel.",
   quota:
     "The provider's usage limit was reached. Check your Google or OpenAI account's quota and billing.",
-  timeout: "The provider took too long to respond. Please try again shortly.",
+  timeout:
+    "The check timed out. Open Test details below to see where it stopped.",
   unavailable:
     "The AI provider could not be reached. Please try again shortly.",
   response:
@@ -90,6 +91,36 @@ export default function AIConnection({ initial }: { initial: AIReadiness }) {
         </p>
       )}
       {message && <p role="alert">{message}</p>}
+      {state.lastCheck?.diagnostic && (
+        <details>
+          <summary>Test details</summary>
+          <p>
+            Waited: {(state.lastCheck.diagnostic.elapsedMs / 1000).toFixed(1)}{" "}
+            seconds
+          </p>
+          <p>
+            {state.lastCheck.diagnostic.source === "app_deadline"
+              ? state.lastCheck.diagnostic.phase === "request"
+                ? "The app reached its waiting limit before a response arrived."
+                : "The app reached its waiting limit while reading the response."
+              : state.lastCheck.diagnostic.source === "provider_http"
+                ? "The provider returned an error response."
+                : state.lastCheck.diagnostic.source === "transport"
+                  ? "The app could not finish connecting to the provider."
+                  : state.lastCheck.diagnostic.source === "response"
+                    ? "The provider response could not be verified."
+                    : "The provider returned a valid test response."}
+          </p>
+          {state.lastCheck.diagnostic.httpStatus !== undefined && (
+            <p>
+              Provider response: HTTP {state.lastCheck.diagnostic.httpStatus}
+            </p>
+          )}
+          {state.lastCheck.diagnostic.networkCode && (
+            <p>Connection code: {state.lastCheck.diagnostic.networkCode}</p>
+          )}
+        </details>
+      )}
       <button
         type="button"
         className="button primary"

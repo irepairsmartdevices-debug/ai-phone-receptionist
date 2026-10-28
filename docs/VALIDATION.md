@@ -232,3 +232,34 @@ assuming a particular version is available to this project.
 These checks use local synthetic transport. The screenshot alone cannot distinguish
 the app's abort from Google's own timeout; a deployed connection check is still
 required to establish live access. No live Google request ran in this workspace.
+
+## 2026-10-28: First-attempt admin connection and Gemini diagnostics
+
+Reproduced a first-fail/second-success authentication path with actual route
+handlers and a Chrome cookie jar: starting on an alternate host stored the pending
+cookie there, while the callback used the configured canonical origin. Auth starts
+now move to the canonical origin before creating state or cookies, and auth
+responses explicitly disable caching. Fresh canonical attempts passed 5/5; the
+alternate-host first attempt failed before this fix and passed afterward. Cookie
+flags, state/PKCE checks and administrator-only access are preserved. Failure logs
+add only pending-cookie presence and origin-match booleans. This proves the host
+mismatch bug, not the owner's unobserved original starting host.
+
+The subsequent deployed Gemini timeout remained ambiguous: the app's deadline and
+provider HTTP 408/504 previously shared one message. The admin check now records
+bounded elapsed time, response phase, HTTP status and a safe failure source from
+the existing single request. Optional connection codes use a fixed allowlist.
+Test details persist across reload; legacy check records remain compatible, and
+unknown stored diagnostic fields are stripped. No raw error, request URL/body,
+credential, cookie or provider message is exposed. No retry or timeout increase
+was added. Gemini's documented string/number enum restriction also led to removing
+the check's boolean enum; local validation still requires the value `true`.
+
+Verification: full Node suite 176/176; Gemini production-browser suite 3/3 using
+synthetic provider transport, including Test details expansion and mobile layout;
+production build and TypeScript passed. Independent review's body-error findings
+were reproduced RED then GREEN, including a real local HTTP socket interruption
+after headers. Interrupted transports remain distinct from invalid JSON/schema
+responses even when their network code is not exposed. No material review findings
+remain. Live Google account access and first-attempt production login still need
+the owner's deployed checks; no live Google request ran in this workspace.

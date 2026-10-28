@@ -1,5 +1,6 @@
 import test, { before, after } from "node:test";
 import assert from "node:assert/strict";
+import { createServer } from "node:http";
 import { db } from "../src/persistence/db";
 import {
   getAIReadiness,
@@ -138,6 +139,177 @@ test("missing Gemini key does not send a paid provider check", async () => {
   assert.equal(result.readiness.configured, false);
   assert.equal(result.readiness.reason, "missing_key");
   assert.equal(result.readiness.lastCheck, null);
+});
+
+test("connection details distinguish a provider timeout and survive reload without private data", async () => {
+  const isolated = { ...env, GEMINI_API_KEY: "private-provider-timeout-key" };
+  let calls = 0;
+  const checked = await runAIConnectionCheck(isolated, async () => {
+    calls++;
+    return new Response("private-provider-body", { status: 504 });
+  });
+  const detail = checked.readiness.lastCheck?.diagnostic;
+  assert.equal(checked.readiness.lastCheck?.reason, "timeout");
+  assert.equal(detail?.source, "provider_http");
+  assert.equal(detail?.httpStatus, 504);
+  assert.equal(detail?.phase, "response");
+  assert.ok(detail && detail.elapsedMs >= 0);
+  assert.equal(calls, 1);
+  assert.deepEqual(
+    (await getAIReadiness(isolated)).lastCheck?.diagnostic,
+    detail,
+  );
+  await db.query(
+    "UPDATE settings SET value=jsonb_set(value,'{lastCheck,diagnostic,rawError}',to_jsonb($1::text)) WHERE key='ai:connection-check'",
+    ["private-injected-provider-message"],
+  );
+  assert.deepEqual(
+    (await getAIReadiness(isolated)).lastCheck?.diagnostic,
+    detail,
+  );
+  assert.doesNotMatch(
+    JSON.stringify(checked),
+    /private-provider|signature|requestId/,
+  );
+});
+
+test("connection details identify app deadlines before headers and while reading a body", async (t) => {
+  t.mock.method(AbortSignal, "timeout", () =>
+    AbortSignal.abort(
+      new DOMException("private-timeout-message", "TimeoutError"),
+    ),
+  );
+  for (const phase of ["request", "response"] as const) {
+    const isolated = {
+      ...env,
+      GEMINI_API_KEY: `private-deadline-${phase}-key`,
+    };
+    const checked = await runAIConnectionCheck(isolated, async (_url, init) => {
+      if (phase === "request") throw init!.signal!.reason;
+      return new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.error(init!.signal!.reason);
+          },
+        }),
+        { status: 400 },
+      );
+    });
+    assert.equal(checked.readiness.lastCheck?.reason, "timeout");
+    assert.equal(
+      checked.readiness.lastCheck?.diagnostic?.source,
+      "app_deadline",
+    );
+    assert.equal(checked.readiness.lastCheck?.diagnostic?.phase, phase);
+    assert.equal(
+      checked.readiness.lastCheck?.diagnostic?.httpStatus,
+      phase === "response" ? 400 : undefined,
+    );
+    assert.doesNotMatch(
+      JSON.stringify(checked),
+      /private-deadline|private-timeout/,
+    );
+  }
+  const gateway = await runAIConnectionCheck(
+    { ...env, GEMINI_API_KEY: "private-gateway-at-deadline" },
+    async () => new Response("private-gateway-body", { status: 504 }),
+  );
+  assert.equal(
+    gateway.readiness.lastCheck?.diagnostic?.source,
+    "provider_http",
+  );
+  assert.equal(gateway.readiness.lastCheck?.diagnostic?.httpStatus, 504);
+});
+
+test("connection details expose only allowlisted transport codes", async () => {
+  for (const code of ["UND_ERR_CONNECT_TIMEOUT", "private-arbitrary-code"]) {
+    const isolated = { ...env, GEMINI_API_KEY: `private-network-${code}-key` };
+    const checked = await runAIConnectionCheck(isolated, async () => {
+      throw Object.assign(new Error("private-error-with-url-and-key"), {
+        cause: { code, privateValue: "private-cause" },
+      });
+    });
+    assert.equal(checked.readiness.lastCheck?.diagnostic?.source, "transport");
+    assert.equal(
+      checked.readiness.lastCheck?.diagnostic?.networkCode,
+      code === "UND_ERR_CONNECT_TIMEOUT" ? code : undefined,
+    );
+    assert.doesNotMatch(
+      JSON.stringify(checked),
+      /private-network|private-error|private-cause|private-arbitrary/,
+    );
+  }
+});
+
+test("connection details retain transport failures after response headers arrive", async () => {
+  for (const status of [200, 400]) {
+    const isolated = {
+      ...env,
+      GEMINI_API_KEY: `private-body-failure-${status}`,
+    };
+    const checked = await runAIConnectionCheck(
+      isolated,
+      async () =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.error(
+                Object.assign(new TypeError("private-body-error"), {
+                  cause: {
+                    code: "UND_ERR_BODY_TIMEOUT",
+                    secret: "private-cause",
+                  },
+                }),
+              );
+            },
+          }),
+          { status },
+        ),
+    );
+    assert.equal(checked.readiness.lastCheck?.diagnostic?.source, "transport");
+    assert.equal(checked.readiness.lastCheck?.diagnostic?.phase, "response");
+    assert.equal(checked.readiness.lastCheck?.diagnostic?.httpStatus, status);
+    assert.equal(
+      checked.readiness.lastCheck?.diagnostic?.networkCode,
+      "UND_ERR_BODY_TIMEOUT",
+    );
+    assert.notEqual(checked.readiness.lastCheck?.reason, "model");
+    assert.doesNotMatch(JSON.stringify(checked), /private-body|private-cause/);
+  }
+});
+
+test("a real interrupted response stays a transport failure even without an allowlisted code", async () => {
+  const server = createServer((_request, response) => {
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.flushHeaders();
+    response.write('{"candidates":[');
+    setTimeout(() => response.destroy(), 30);
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const address = server.address();
+    assert.ok(address && typeof address === "object");
+    const checked = await runAIConnectionCheck(
+      { ...env, GEMINI_API_KEY: "private-interrupted-response-key" },
+      // This is a local synthetic server, never an external provider request.
+      (_url, init) => fetch(`http://127.0.0.1:${address.port}`, init),
+    );
+    assert.equal(checked.readiness.lastCheck?.diagnostic?.source, "transport");
+    assert.equal(checked.readiness.lastCheck?.diagnostic?.phase, "response");
+    assert.equal(checked.readiness.lastCheck?.diagnostic?.httpStatus, 200);
+    assert.equal(
+      checked.readiness.lastCheck?.diagnostic?.networkCode,
+      undefined,
+    );
+    assert.doesNotMatch(
+      JSON.stringify(checked),
+      /private-interrupted|candidates/,
+    );
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
+  }
 });
 
 test("a later failed check replaces a previous success for the same key", async () => {

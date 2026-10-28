@@ -1,7 +1,12 @@
 import { createHmac, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { db } from "../persistence/db";
-import { checkAIConnection, getAIStatus } from "./assistant";
+import { getAIStatus } from "./assistant";
+import {
+  connectionDiagnosticSchema,
+  traceConnectionCheck,
+  type ConnectionDiagnostic,
+} from "./connection-diagnostics";
 
 const key = "ai:connection-check";
 const reasonSchema = z.enum([
@@ -18,6 +23,7 @@ const checkSchema = z.object({
   ok: z.boolean(),
   checkedAt: z.string().datetime(),
   reason: reasonSchema.optional(),
+  diagnostic: connectionDiagnosticSchema.optional(),
 });
 const storedSchema = z.object({
   signature: z.string(),
@@ -121,8 +127,11 @@ export async function runAIConnectionCheck(
     client.release();
   }
   let result;
+  let diagnostic: ConnectionDiagnostic | undefined;
   try {
-    result = await checkAIConnection(env, fetcher);
+    const checked = await traceConnectionCheck(env, fetcher);
+    result = checked.result;
+    diagnostic = checked.diagnostic;
   } catch {
     result = { ok: false, reason: "unavailable" };
   }
@@ -130,6 +139,7 @@ export async function runAIConnectionCheck(
   reservation.lastCheck = {
     ok: result.ok === true,
     checkedAt: new Date().toISOString(),
+    ...(diagnostic ? { diagnostic } : {}),
     ...(!result.ok
       ? { reason: reason.success ? reason.data : ("unavailable" as const) }
       : {}),

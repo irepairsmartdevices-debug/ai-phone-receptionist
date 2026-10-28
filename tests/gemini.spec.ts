@@ -33,6 +33,12 @@ test("administrator checks Gemini and simulator retains semantic device context"
   await expect(ai).toContainText("Gemini");
   await ai.getByRole("button", { name: "Test Gemini connection" }).click();
   await expect(ai).toContainText("Connection check passed.");
+  await ai.getByText("Test details", { exact: true }).click();
+  await expect(ai.locator("details")).toContainText("Waited:");
+  await expect(ai.locator("details")).toContainText(
+    "Provider response: HTTP 200",
+  );
+  await expect(ai.locator("details")).toContainText("valid test response");
   await ai.getByRole("button", { name: "Test Gemini connection" }).click();
   await expect(ai).toContainText(/Please wait \d+ seconds/);
   await page.reload();

@@ -43,6 +43,13 @@ Use `AI_PROVIDER=openai` to deliberately restore the earlier OpenAI provider, or
 - Timeout/unavailable: retry later. No repeated automatic paid retries occur.
 - Unsupported response: check the model supports structured JSON output.
 
+After a new check, expand **Test details** to see its elapsed time, whether it
+stopped before or after response headers, and any received HTTP status. A timeout
+reported by the provider is separate from the app's own deadline. Connection codes
+are limited to a fixed network-error allowlist; raw provider messages, URLs,
+request bodies and credentials are never included. These details observe the same
+single request and do not trigger extra requests.
+
 Checks are administrator-only and protected by the normal same-origin rule. A
 45-second shared reservation prevents concurrent button clicks from sending repeated
 paid requests. Gemini connection tests allow up to 30 seconds for the provider;
