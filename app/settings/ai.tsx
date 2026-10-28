@@ -92,6 +92,7 @@ export default function AIConnection({ initial }: { initial: AIReadiness }) {
       {message && <p role="alert">{message}</p>}
       <button
         type="button"
+        className="button primary"
         onClick={check}
         disabled={busy || !state.configured}
       >
