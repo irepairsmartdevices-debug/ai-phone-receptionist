@@ -29,6 +29,9 @@ function settings() {
     throw new RepairAuthorizationError("repair_configuration");
   }
 }
+export function authorizationOrigin() {
+  return settings().target.origin;
+}
 export function authorizationRequest() {
   const verifier = randomBytes(32).toString("base64url"),
     state = randomBytes(32).toString("hex");

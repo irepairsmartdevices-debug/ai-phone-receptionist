@@ -102,6 +102,90 @@ test("fixture mode keeps the connected authorization endpoint unavailable", asyn
     assert.equal(response.cookies.has("staff_auth_pending"), false);
   }));
 
+test("alternate website origins move to the configured website before creating a connection request", async () =>
+  connected(async () => {
+    for (const alternate of [
+      "https://preview.example.test",
+      "http://localhost:3000",
+    ]) {
+      const response = await start(
+        new NextRequest(alternate + "/api/auth/start"),
+      );
+      assert.equal(response.status, 307);
+      assert.equal(
+        response.headers.get("location"),
+        origin + "/api/auth/start",
+      );
+      assert.equal(response.cookies.has("staff_auth_pending"), false);
+    }
+  }));
+
+test("canonical connection starts keep their pending state bound to the repair authorization", async () =>
+  connected(async () => {
+    const response = await start(new NextRequest(origin + "/api/auth/start"));
+    const target = new URL(response.headers.get("location")!);
+    const cookie = response.cookies.get("staff_auth_pending");
+    assert.ok(cookie);
+    const request = JSON.parse(cookie.value);
+    assert.equal(target.origin, "https://repairs.example.test");
+    assert.equal(
+      target.pathname,
+      "/api/integrations/receptionist/v1/authorize",
+    );
+    assert.equal(
+      target.searchParams.get("redirect_uri"),
+      origin + "/api/auth/callback",
+    );
+    assert.equal(target.searchParams.get("state"), request.state);
+    assert.equal(typeof request.verifier, "string");
+    assert.equal(request.verifier.length, 43);
+    assert.equal(cookie.path, "/api/auth");
+    assert.equal(cookie.httpOnly, true);
+    assert.equal(cookie.sameSite, "lax");
+    assert.equal(cookie.secure, true);
+  }));
+
+test("connection responses cannot be cached across browser authorization attempts", async () =>
+  connected(async () => {
+    const responses = [
+      await start(new NextRequest(origin + "/api/auth/start")),
+      await start(
+        new NextRequest("https://preview.example.test/api/auth/start"),
+      ),
+      await callback(request()),
+      await callback(request({ cookie: "" })),
+    ];
+    delete process.env.REPAIR_SERVICE_TOKEN;
+    responses.push(await start(new NextRequest(origin + "/api/auth/start")));
+    process.env.RECEPTIONIST_MODE = "fixture";
+    responses.push(await start(new NextRequest(origin + "/api/auth/start")));
+    for (const response of responses)
+      assert.equal(response.headers.get("cache-control"), "private, no-store");
+  }));
+
+test("missing-cookie failures log only browser presence and canonical-origin diagnostics", async () =>
+  connected(async (logs) => {
+    await callback(request({ cookie: "" }));
+    await callback(
+      new NextRequest("https://preview.example.test/api/auth/callback"),
+    );
+    assert.deepEqual(
+      logs.map((entry) => entry[1]),
+      [
+        {
+          reason: "connection_request_expired",
+          pendingCookiePresent: false,
+          originMatchesConfigured: true,
+        },
+        {
+          reason: "connection_request_expired",
+          pendingCookiePresent: false,
+          originMatchesConfigured: false,
+        },
+      ],
+    );
+  }));
+
 test("invalid website settings return a callback error on the current website", async () =>
   connected(async () => {
     for (const setting of ["not a URL", "javascript:private-config-value"]) {
