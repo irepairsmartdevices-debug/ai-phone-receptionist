@@ -61,11 +61,11 @@ checkAIConnection(env?:Record<string,string|undefined>, fetcher?:typeof fetch): 
 
 **Interfaces:** Consumes compatible conversation types; produces factory/status/check interfaces above. Optional Gemini fields may be implemented before Task 2 writes their types using local structural types.
 
-- [ ] Write tests for legacy OpenAI selection, explicit Gemini key isolation/default/custom model, none/unknown/missing configuration, one-call-per-turn budget, approved IDs/catalog IDs and structured extraction.
-- [ ] Run `node --env-file=.env --import tsx --test tests/gemini-provider.test.ts`; observe missing behavior failure.
-- [ ] Implement Gemini POST v1beta `models/<validated model>:generateContent`, `x-goog-api-key`, JSON `responseJsonSchema`, bounded input/output/time; skip thought parts and require STOP. Validate local schemas and references. Redact customer inputs before transport, no raw response logging.
-- [ ] Implement fixed-prompt connection check and safe auth/model/quota/timeout/response classifications. Keep one request per check, no retries. Keep default OpenAI compatible and no implicit Google/OpenAI credential reuse.
-- [ ] Run provider suites; record RED/GREEN evidence and changed files. Commit only owned files after root integration coordination.
+- [x] Write tests for legacy OpenAI selection, explicit Gemini key isolation/default/custom model, none/unknown/missing configuration, one-call-per-turn budget, approved IDs/catalog IDs and structured extraction.
+- [x] Run `node --env-file=.env --import tsx --test tests/gemini-provider.test.ts`; observe missing behavior failure.
+- [x] Implement Gemini POST v1beta `models/<validated model>:generateContent`, `x-goog-api-key`, JSON `responseJsonSchema`, bounded input/output/time; skip thought parts and require STOP. Validate local schemas and references. Redact customer inputs before transport, no raw response logging.
+- [x] Implement fixed-prompt connection check and safe auth/model/quota/timeout/response classifications. Keep one request per check, no retries. Keep default OpenAI compatible and no implicit Google/OpenAI credential reuse.
+- [x] Run provider suites; record RED/GREEN evidence and changed files. Commit only owned files after root integration coordination.
 
 ## Task 2: Rich intake, safe questions and semantic catalog routing
 
@@ -73,11 +73,11 @@ checkAIConnection(env?:Record<string,string|undefined>, fetcher?:typeof fetch): 
 
 **Interfaces:** Consumes factory-produced extended plans; produces existing `runAssistantTurn` signature with optional compatible types above. Do not edit provider or route files.
 
-- [ ] Write tests for paraphrased wet-device intake, distinct liquid/time/symptoms/power slots, multi-detail first message, missing-goal choice/style, non-Apple catalog models, corrections, exact saved topics, paraphrased pricing and directions, old state compatibility, unknown variant, malicious references/proposals and protected-state bypass.
-- [ ] Run dialogue tests; observe specific missing behavior failures.
-- [ ] Extend bounded redacted memory with explicitly supported details. Validate extraction against current customer text/history and corrections; keep known details and avoid repeat questions. Use server-defined goal/style question variants, no unrestricted generated prose.
-- [ ] Supply bounded public catalog identities without money to the planner and validate chosen IDs; route valid semantic price/directions/hours intents into existing deterministic workflows. Read current source each pricing turn and preserve unknown/ambiguous exact variants, manual override policy and custom topic wording.
-- [ ] Run new dialogue plus existing adaptive/knowledge/engine tests. Record evidence; commit only owned files after root coordination.
+- [x] Write tests for paraphrased wet-device intake, distinct liquid/time/symptoms/power slots, multi-detail first message, missing-goal choice/style, non-Apple catalog models, corrections, exact saved topics, paraphrased pricing and directions, old state compatibility, unknown variant, malicious references/proposals and protected-state bypass.
+- [x] Run dialogue tests; observe specific missing behavior failures.
+- [x] Extend bounded redacted memory with explicitly supported details. Validate extraction against current customer text/history and corrections; keep known details and avoid repeat questions. Use server-defined goal/style question variants, no unrestricted generated prose.
+- [x] Supply bounded public catalog identities without money to the planner and validate chosen IDs; route valid semantic price/directions/hours intents into existing deterministic workflows. Read current source each pricing turn and preserve unknown/ambiguous exact variants, manual override policy and custom topic wording.
+- [x] Run new dialogue plus existing adaptive/knowledge/engine tests. Record evidence; commit only owned files after root coordination.
 
 ## Task 3: Shared integration and administrator Gemini connection check
 
@@ -85,16 +85,16 @@ checkAIConnection(env?:Record<string,string|undefined>, fetcher?:typeof fetch): 
 
 **Interfaces:** Consumes Task 1 factory/status/check; store only safe provider/model/config fingerprint and check result in existing settings namespace. Use HMAC credential fingerprint internally, never send/store the raw key. A changed key/model must invalidate old success.
 
-- [ ] Write endpoint/persistence/UI tests for admin/origin guard, missing key, successful check, safe errors, failed subsequent check, changed configuration and rapid repeat checks; observe RED.
-- [ ] Use existing settings/PostgreSQL advisory lock to reserve one check per configuration per 30 seconds; no migrations. Return 429/Retry-After on rapid repeats. Bound provider check duration and avoid holding pooled transaction across provider HTTP.
-- [ ] Wire factory into both shared callers. Update Settings with selected provider/model, configured vs successful checked state and Test Gemini connection action; Knowledge semantic availability follows selected config.
-- [ ] Run readiness, existing provider/chat/voice tests, typecheck and actual simulator browser tests using deterministic local provider fixtures.
-- [ ] Update `.env.example`, README, setup documentation and approved spec status. Record task evidence and commit root-owned changes.
+- [x] Write endpoint/persistence/UI tests for admin/origin guard, missing key, successful check, safe errors, failed subsequent check, changed configuration and rapid repeat checks; observe RED.
+- [x] Use existing settings/PostgreSQL advisory lock to reserve one check per configuration per 30 seconds; no migrations. Return 429/Retry-After on rapid repeats. Bound provider check duration and avoid holding pooled transaction across provider HTTP.
+- [x] Wire factory into both shared callers. Update Settings with selected provider/model, configured vs successful checked state and Test Gemini connection action; Knowledge semantic availability follows selected config.
+- [x] Run readiness, existing provider/chat/voice tests, typecheck and actual simulator browser tests using deterministic local provider fixtures.
+- [x] Update `.env.example`, README, setup documentation and approved spec status. Record task evidence and commit root-owned changes.
 
 ## Task 4: Independent review, verification and authorized deployment
 
-- [ ] Review all changes against approved spec, plus provider schema reference and price/current-state invariants.
-- [ ] Run `npm test`, relevant integration and browser suites, `npm run typecheck`, `npm run build`, `git diff --check`; investigate actual failures rather than weakening assertions.
-- [ ] Independent reviewer checks full diff; reproduce substantive findings with failing tests, fix and rerun affected/full required checks.
+- [x] Review all changes against approved spec, plus provider schema reference and price/current-state invariants.
+- [x] Run `npm test`, relevant integration and browser suites, `npm run typecheck`, `npm run build`, `git diff --check`; investigate actual failures rather than weakening assertions.
+- [x] Independent reviewer checks full diff; reproduce substantive findings with failing tests, fix and rerun affected/full required checks.
 - [ ] Commit final validation/docs, integrate into receptionist work branch and push authorized `origin/main` without altering repair app. Keep existing private settings untouched.
 - [ ] Tell owner code result and exact three production variables; guide Google key setup one screen at a time. Explicitly distinguish local/mock verification from actual Google connectivity, which needs their private key and hosted connection check.

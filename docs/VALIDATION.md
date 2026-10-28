@@ -177,3 +177,37 @@ machine credential from a rejected code. Connected production browser suite2/2
 passed across separate local sites, including correct cookie removal, explicit
 local-test cancellation and an expired callback displaying its reason. A fresh
 hosted attempt after deployment is still needed to identify the owner's live cause.
+
+
+## Gemini receptionist upgrade
+
+The owner selected Gemini and approved the written design. Implemented selected-provider
+REST transport, explicit observational memory, safe question goals/styles, semantic
+pricing/directions routing, current catalog identities, and administrator-only AI checks.
+No repair database/schema, repair credentials, or staff access changes were made.
+
+Final release verification:
+
+- `npm test`: **164 passed, 0 failed**. Includes Gemini contract, grounded dialogue,
+  exact custom topics, signed voice integration, readiness and existing regressions.
+- `REPAIR_CHECKOUT=/workspace/.worktrees/repair-receptionist-connect npm run test:integration`:
+  **5 passed**, including source price/model freshness, verification, booking
+  idempotency, signed voice deduplication and transactional recovery.
+- `TEST_MODE=gemini PLAYWRIGHT_BASE_URL=http://localhost:3002 npm run test:browser`:
+  **3 passed** against the production build: administrator/origin guards, real UI
+  connection-check/cooldown/persistence, multi-turn simulator/reload, and mobile layout.
+- `npm run typecheck`, `npm run build`, and `git diff --check`: passed.
+- Independent provider/readiness and whole-branch reviews completed. Review fixes
+  were reproduced RED then GREEN: private workflow history isolation, stale model/repair
+  invalidation, exact Fold/Lite/XL variants, and ordinary repair prose in model parsing.
+
+Protected workflow replies and unmarked legacy history are not sent to the AI. Useful
+structured public context survives. Unknown suffixes prompt clarification instead of
+borrowing a shorter model's price. Owner-written topics remain exact.
+
+Gemini transport and browser tests use synthetic provider responses; these results
+do not prove access to the owner's Google model/account. No Google key was provided
+to this workspace, and managed network policy does not permit the live Gemini host.
+The deployed administrator **Test Gemini connection** action must pass after private
+Production configuration and redeployment. Gemini generateContent is distinct from
+Gemini Live audio; phone-number setup remains separate.

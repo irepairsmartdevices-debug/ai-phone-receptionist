@@ -78,7 +78,7 @@ Configure an HTTPS deployment and `VOICE_PUBLIC_ORIGIN` with its canonical origi
 
 A staff caller must pair the signed call to an authenticated dashboard session before voice status changes. Say “pair staff”, then enter the short-lived pairing code on the dashboard's Calls page. Call pairing never bypasses repair-app role, location, version, confirmation, or domain workflow checks.
 
-Network destinations: `binaries.prisma.sh` for the repair app's verified Prisma engine; standard npm/GitHub package destinations; `api.twilio.com` and `api.openai.com` for optional live providers. TLS/checksum verification remains enabled.
+Network destinations: `binaries.prisma.sh` for the repair app's verified Prisma engine; standard npm/GitHub package destinations; `api.twilio.com`, `api.openai.com`, and `generativelanguage.googleapis.com` for optional live providers. TLS/checksum verification remains enabled.
 
 Before calling the phone feature ready, separately verify a real inbound call, delivered customer verification, a confirmed repair operation, and transfer/fallback. Local signed-webhook tests do not prove a live call works.
 

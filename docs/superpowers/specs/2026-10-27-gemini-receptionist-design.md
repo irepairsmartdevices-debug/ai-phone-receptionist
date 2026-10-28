@@ -1,6 +1,6 @@
 # Gemini receptionist understanding and conversation
 
-Status: owner approved ("go ahead"); implementation in progress.
+Status: owner approved ("go ahead"); implementation and local verification complete. Private Google setup and the live connection check remain pending.
 
 ## Intent and owner requirements
 

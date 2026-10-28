@@ -62,3 +62,19 @@ test("administrator checks Gemini and simulator retains semantic device context"
   );
   expect(await page.content()).not.toContain("gemini-browser-private-key");
 });
+
+test("Gemini connection controls remain usable on a small phone screen", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await signIn(page);
+  const ai = page.getByRole("region", { name: "AI connection" });
+  await expect(
+    ai.getByRole("button", { name: "Test Gemini connection" }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+});
