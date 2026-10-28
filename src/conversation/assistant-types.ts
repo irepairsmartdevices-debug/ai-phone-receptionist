@@ -12,7 +12,31 @@ export type StoreGuide = {
   landmarks: string;
   sourceLocationId?: string;
 };
+export type DialogueGoal =
+  | "device"
+  | "model"
+  | "symptoms"
+  | "liquid"
+  | "occurredAt"
+  | "power"
+  | "offer_visit";
+export type DialogueStyle = "direct" | "warm" | "contextual";
+export type DialogueDetails = {
+  liquid?: string | null;
+  occurredAt?: string | null;
+  symptoms?: string | null;
+  power?: string | null;
+};
+export type DialogueCatalogItem = {
+  id: string;
+  category: string;
+  brand: string;
+  model: string;
+  repair: string;
+};
 export type DialogueMemory = {
+  details?: DialogueDetails;
+  askedGoal?: DialogueGoal;
   device?: string;
   model?: string;
   issue?: string;
@@ -24,6 +48,11 @@ export type DialogueMemory = {
   history?: { role: "user" | "assistant"; text: string }[];
 };
 export type DialoguePlan = {
+  details?: DialogueDetails;
+  nextGoal?: DialogueGoal | null;
+  style?: DialogueStyle;
+  catalogOfferingId?: string | null;
+  reset?: "device" | "issue" | null;
   action:
     | "ask_device"
     | "ask_model"
@@ -48,6 +77,7 @@ export type DialoguePlanner = (input: {
   text: string;
   memory: DialogueMemory;
   answers: CustomAnswer[];
+  catalog?: DialogueCatalogItem[];
 }) => Promise<DialoguePlan | null>;
 export type AssistantState = State & { assistant?: DialogueMemory };
 export type AssistantTurn = { text: string; state: AssistantState };

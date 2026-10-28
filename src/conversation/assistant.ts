@@ -5,6 +5,7 @@ import {
   matchSavedAnswer,
   normalize,
   isPriceQuestion,
+  quoteCatalog,
 } from "../knowledge/resolve";
 import { resolveStores, renderDirections } from "./directions";
 import type {
@@ -14,7 +15,18 @@ import type {
   DialogueMemory,
   DialoguePlan,
   StoreGuide,
+  DialogueCatalogItem,
 } from "./assistant-types";
+
+import { nextQuestion } from "./dialogue-questions";
+import {
+  boundedDetails,
+  catalogModel,
+  correcting,
+  exactModelIn,
+  grounded,
+  observations,
+} from "./dialogue-grounding";
 
 const bound = (value: string | undefined, max: number) =>
   value ? redact(value).slice(0, max) : undefined;
@@ -25,6 +37,7 @@ function memoryFrom(value: DialogueMemory | undefined): DialogueMemory {
     device: bound(value.device, 120),
     model: bound(value.model, 120),
     issue: bound(value.issue, 1000),
+    details: boundedDetails(value.details),
     history: (value.history ?? []).slice(-8).map((m) => ({
       role: m.role === "assistant" ? "assistant" : "user",
       text: redact(String(m.text)).slice(0, 600),
@@ -51,12 +64,12 @@ const report = (text: string) =>
   !/^(?:do|does|can|could|will|would|are|is|what|how|why|when|where)\b/i.test(
     text.trim(),
   ) &&
-  /\b(wet|water|liquid|broken|cracked|not charging|wont turn on|won't turn on|screen is|screen went|battery is)\b/i.test(
+  /\b(wet|water|liquid|took a swim|soaked|spilled|broken|cracked|not charging|wont turn on|won't turn on|screen is|screen went|battery is)\b/i.test(
     text,
   );
 function explicitModel(text: string) {
   const match = text.match(
-    /\b(iPhone\s*\d{1,3}(?:\s*(?:Pro Max|Pro|Plus|Mini))?|iPad\s+(?:Pro|Air|Mini)?\s*\d{1,3}(?:\s*(?:Pro|Air|Mini))?|(?:Samsung\s+)?Galaxy\s+[A-Z]?\d{1,3}(?:\s*(?:Ultra|Plus|FE))?|Pixel\s*\d{1,3}(?:\s*(?:Pro|XL))?)\b/i,
+    /\b(iPhone\s*\d{1,3}(?:\s*(?:Pro|Max|Plus|Mini|Ultra|XL|5G|4G|LTE|Wi-Fi))*|iPad\s+(?:Pro|Air|Mini)?\s*\d{1,3}(?:\s*(?:Pro|Air|Mini))?|(?:Samsung\s+)?Galaxy\s+[A-Z]?\d{1,3}(?:\s*(?:Ultra|Plus|FE|Pro|Max|XL|5G|4G|LTE|Wi-Fi))*|Pixel\s*\d{1,3}(?:\s*(?:Pro|XL|Max|Plus|Ultra|5G|4G|LTE|Wi-Fi))*)\b/i,
   );
   return match?.[0];
 }
@@ -76,10 +89,10 @@ function waterIssue(text: string) {
     /\b(?:did not|didnt|does not|doesnt|not|never|no)(?: get| got| getting| have| has| any)? (?:wet|water damage|liquid damage)\b/g,
     "",
   );
-  return /\b(wet|water|liquid)\b/.test(positive);
+  return /\b(wet|water|liquid|swim|soaked|spilled)\b/.test(positive);
 }
 function specificSymptoms(text: string) {
-  return /\b(screen (?:is |went )?(?:black|cracked|blank)|(?:will not|wont|cannot|cant|does not|doesnt) (?:turn on|charge|power on)|not charging|no (?:display|sound)|battery (?:is )?swollen)\b/.test(
+  return /\b((?:screen|display) (?:is |went )?(?:black|cracked|blank)|(?:will not|wont|cannot|cant|does not|doesnt) (?:turn on|charge|power on)|not charging|no (?:display|sound)|battery (?:is )?swollen)\b/.test(
     normalize(text),
   );
 }
@@ -141,7 +154,7 @@ function extract(text: string, memory: DialogueMemory): DialogueMemory {
   if (m.asked === "details" && !model && text.trim() && !guarded(text)) {
     if (!issueCorrection)
       m.issue = bound([m.issue, text.trim()].filter(Boolean).join("; "), 1000);
-    m.detailsKnown = true;
+    m.detailsKnown = specificSymptoms(text);
     m.asked = undefined;
   }
   return m;
@@ -169,47 +182,6 @@ function traceable(
     ` ${haystack} `.includes(` ${normalize(candidate)} `)
     ? candidate
     : undefined;
-}
-function safeQuestion(
-  question: string | null,
-  field: "device" | "model" | "details",
-  m: DialogueMemory,
-) {
-  if (!question || question.length > 240) return undefined;
-  // Accept only observational question grammars. The model chooses a relevant
-  // follow-up, but cannot smuggle a business claim or instruction into it.
-  const q = question
-    .trim()
-    .replace(/^(?:could|can) you (?:please )?tell me /i, "");
-  const device =
-    /^(?:what|which)(?: kind| type| brand| make)?(?: of)? (?:device|phone|tablet|computer|laptop)(?: do you (?:have|use)| are you using| got wet| is (?:having|experiencing) (?:the|this) (?:problem|issue)| is it| is affected)?\?$/i;
-  const model =
-    /^(?:what|which)(?: is)? (?:the )?(?:exact )?(?:model|version|generation)(?: of (?:your|the) (?:device|phone|tablet|computer|laptop))?(?: do you (?:have|use)| are you using| is it)?\?$/i;
-  const details = [
-    /^(?:what|which) (?:problems|symptoms|changes|issues)(?: have you noticed| are you seeing| are you experiencing)(?: since (?:that happened|it happened)| with (?:it|the device|your device))?\?$/i,
-    /^what happened(?: to (?:it|the device|your device))?\?$/i,
-    /^what (?:kind of )?liquid (?:was involved|got on the device|was the device exposed to)\?$/i,
-    /^when did (?:it|this|that) (?:happen|start)\?$/i,
-    /^how (?:did (?:it|this|that) happen|long ago did (?:it|this|that) happen)\?$/i,
-    /^is the device currently (?:on|off)\?$/i,
-  ];
-  if (field === "device")
-    return !m.device && device.test(q) ? question : undefined;
-  if (field === "model")
-    return !m.model && model.test(q) ? question : undefined;
-  if (details.some((pattern) => pattern.test(q))) {
-    if (/liquid/i.test(q) && !/wet|water|liquid/i.test(m.issue ?? ""))
-      return undefined;
-    return question;
-  }
-  return undefined;
-}
-function fallbackQuestion(field: "device" | "model" | "details") {
-  return field === "device"
-    ? "What kind of device got wet or is having the problem?"
-    : field === "model"
-      ? "What is the exact model of your device?"
-      : "What problems have you noticed since that happened?";
 }
 function currentPolicy(
   options: AssistantOptions,
@@ -352,7 +324,7 @@ export async function runAssistantTurn(
   // confirmation or changing a verification step.
   if (memory.choosingStore && guarded(value) && !directionRequest(value))
     memory.choosingStore = false;
-  if (directionRequest(value) || memory.choosingStore) {
+  const directions = async (): Promise<AssistantTurn> => {
     let locations: StoreGuide[] = options.stores;
     try {
       const b = await options.service.business();
@@ -425,7 +397,8 @@ export async function runAssistantTurn(
     memory.choosingStore = false;
     memory.storeId = selected.id;
     return finish(renderDirections(selected));
-  }
+  };
+  if (directionRequest(value) || memory.choosingStore) return directions();
   // All active ticket, booking, confirmation and pricing states belong to the
   // existing deterministic authorization/transaction engine.
   if (state.step && state.step !== "start") return delegate();
@@ -462,46 +435,174 @@ export async function runAssistantTurn(
       { step: "start" },
     );
   }
-  if (isPriceQuestion(value)) {
-    const current = explicitModel(value);
-    if (current) memory = extract(value, memory);
-    const context = current
-      ? ""
-      : [memory.device, memory.model].filter(Boolean).join(" ");
-    return delegate(context ? `${value} ${context}` : value);
+  const previousMemory = { ...memory };
+  const correction = correcting(value);
+  const resetDevice =
+    correction &&
+    /\b(different|wrong|not the|not an?)\b.*\b(model|device|phone|tablet|laptop)\b/i.test(
+      value,
+    );
+  if (resetDevice) {
+    memory.model = undefined;
+    memory.details = {};
+    memory.detailsKnown = false;
+    memory.offeredBooking = false;
+    memory.asked = undefined;
   }
+  if (correction && report(value)) {
+    memory.details = {};
+    memory.detailsKnown = false;
+  }
+  const currentModel = explicitModel(value);
+  memory = extract(value, memory);
+  memory.details = observations(value, memory);
+  if (memory.details.symptoms) memory.detailsKnown = true;
+  // Corrections invalidate an old estimate before any later booking or pricing turn.
+  if (
+    correction ||
+    memory.model !== previousMemory.model ||
+    memory.device !== previousMemory.device
+  )
+    state = { ...state, lastQuote: undefined, pricing: undefined };
+  const priceInput = () => {
+    const explicit =
+      explicitModel(value) || /\b[a-z]*\d+[a-z0-9]*\b/i.test(value);
+    const context = explicit ? "" : (memory.model ?? "");
+    const repair =
+      /\b(screen|display|glass|battery|camera|charging|port|water|liquid|speaker|repair|replacement)\b/i.test(
+        value,
+      )
+        ? ""
+        : memory.details?.symptoms || memory.issue || "";
+    return ["price", value, context, repair].filter(Boolean).join(" ");
+  };
+  if (isPriceQuestion(value)) return delegate(priceInput());
   const personal = report(value) || !!memory.issue;
   const exact = matchSavedAnswer(value, options.knowledge.answers);
   if (exact.answer && !report(value)) return delegate();
   if (/^(?:what|when|are|is|how)\b.*\b(hours|open|close|closed)\b/i.test(value))
     return delegate(value, "hours");
   let plan: DialoguePlan | null = null;
-  try {
-    plan =
-      (await options.planner?.({
-        text: redact(value),
-        memory,
-        answers: options.knowledge.answers,
-      })) ?? null;
-  } catch {
-    /* deterministic intake remains available */
+  let catalog: DialogueCatalogItem[] = [];
+  if (options.planner) {
+    try {
+      const business = await options.service.business();
+      catalog = quoteCatalog(
+        business.ok ? business.value : undefined,
+        options.knowledge.prices,
+      )
+        .filter(
+          (row) =>
+            row.id.length <= 160 &&
+            [row.category, row.brand, row.model, row.repair].every(
+              (label) => label.length <= 120,
+            ),
+        )
+        .slice(0, 200)
+        .map(({ id, category, brand, model, repair }) => ({
+          id,
+          category,
+          brand,
+          model,
+          repair,
+        }));
+    } catch {
+      /* A failed catalog read does not block deterministic intake. */
+    }
+    try {
+      plan =
+        (await options.planner({
+          text: redact(value),
+          memory,
+          answers: options.knowledge.answers,
+          catalog,
+        })) ?? null;
+    } catch {
+      /* deterministic intake remains available */
+    }
   }
-  const previousMemory = { ...memory };
-  const currentModel = explicitModel(value);
-  memory = extract(value, memory);
+  const foundModel = catalogModel(value, catalog);
+  if (foundModel) {
+    memory.model = foundModel;
+    const row = catalog.find((row) => row.model === foundModel)!;
+    if (!memory.device) memory.device = row.brand || row.category || "device";
+  }
   if (plan) {
-    const device = traceable(plan.device, value, memory, 120),
-      model = traceable(plan.model, value, memory, 120),
-      issue = traceable(plan.issue, value, memory, 1000);
+    // During corrections, only this turn can supply replacements. History must
+    // never resurrect a rejected model, issue, or observation.
+    const evidence = correction
+      ? {
+          ...memory,
+          history: [],
+          model: undefined,
+          device: undefined,
+          issue: undefined,
+        }
+      : memory;
+    const device = traceable(plan.device, value, evidence, 120),
+      model = traceable(plan.model, value, evidence, 120),
+      issue = traceable(plan.issue, value, evidence, 1000);
     if (device && !currentModel && memory.device === previousMemory.device) {
       if (memory.device && normalize(memory.device) !== normalize(device))
         memory.model = undefined;
       memory.device = device;
     }
-    if (model && !currentModel && memory.model === previousMemory.model)
+    if (
+      model &&
+      !currentModel &&
+      !foundModel &&
+      (!memory.model || memory.model === previousMemory.model) &&
+      (!grounded(model, value) || exactModelIn(value, model))
+    )
       memory.model = model;
-    if (issue && memory.issue === previousMemory.issue) memory.issue = issue;
+    if (issue && (!memory.issue || memory.issue === previousMemory.issue))
+      memory.issue = issue;
+    memory.details = observations(value, memory, plan.details);
+    if (memory.details.symptoms) memory.detailsKnown = true;
   }
+  if (
+    memory.model !== previousMemory.model ||
+    memory.device !== previousMemory.device
+  )
+    state = { ...state, lastQuote: undefined, pricing: undefined };
+  if (plan?.action === "answer") {
+    const selected = plan.answerIds.map((id) =>
+      options.knowledge.answers.find((a) => a.id === id),
+    );
+    const topic = selected.find((a) => a?.topic);
+    if (topic) return topicReply(topic.answer);
+    if (!personal && selected.some(Boolean))
+      return finish(
+        selected
+          .filter(Boolean)
+          .map((a) => a!.answer)
+          .join(" "),
+        { step: "start" },
+      );
+  }
+  if (plan?.action === "pricing") {
+    // An ID is a reference only; never use it to supply an unmentioned model or
+    // trust a provider amount. The quote engine rereads current source data.
+    const selected = catalog.find((row) => row.id === plan.catalogOfferingId);
+    const input = priceInput();
+    const repairEvidence = [value, memory.issue, memory.details?.symptoms]
+      .filter(Boolean)
+      .join(" ");
+    const compatible =
+      selected &&
+      normalize(selected.model) === normalize(memory.model ?? "") &&
+      normalize(selected.repair)
+        .split(" ")
+        .some(
+          (word) =>
+            !["repair", "replacement", "service"].includes(word) &&
+            word.length > 3 &&
+            normalize(repairEvidence).split(" ").includes(word),
+        );
+    return delegate(compatible ? `${input} ${selected.repair}` : input);
+  }
+  if (plan?.action === "directions") return directions();
+  if (plan?.action === "hours") return delegate("hours", "hours");
   if (
     plan?.action === "booking" &&
     /\b(reserve|arrange|schedule|book)\b.*\b(visit|appointment|time|slot)\b/i.test(
@@ -527,7 +628,6 @@ export async function runAssistantTurn(
       if (facts.length) return finish(facts.join(" "), { step: "start" });
     }
     if (plan?.action === "ticket") return delegate("ticket status", "ticket");
-    if (plan?.action === "hours") return delegate("hours", "hours");
     if (plan?.action === "callback")
       return finish(
         "I can help you leave a callback message. Please use the callback form so the shop can contact you.",
@@ -535,35 +635,21 @@ export async function runAssistantTurn(
       );
     return delegate();
   }
-  const detailsAnswered =
-    memory.detailsKnown ||
-    (state.assistant?.asked === "details" && !explicitModel(value));
-  let field: "device" | "model" | "details" | undefined;
-  if (!memory.device) field = "device";
-  else if (!memory.model) field = "model";
-  else if (
-    !detailsAnswered &&
-    !memory.offeredBooking &&
-    plan?.action !== "offer_booking"
-  )
-    field = "details";
-  if (field) {
-    memory.asked = field;
+  const question = nextQuestion(memory, plan);
+  if (question.goal !== "offer_visit") {
+    memory.askedGoal = question.goal;
+    memory.asked =
+      question.goal === "device" || question.goal === "model"
+        ? question.goal
+        : "details";
     memory.offeredBooking = false;
-    const question =
-      safeQuestion(plan?.question ?? null, field, memory) ??
-      fallbackQuestion(field);
-    // A sympathy plan must not turn routine intake replies into stock apologies.
-    const ack = plan?.ack === "thanks" ? "Thanks. " : "";
-    return finish(ack + question, { step: "start" });
+    return finish(question.text, { step: "start" });
   }
   memory.asked = undefined;
-  memory.detailsKnown = true;
+  memory.askedGoal = undefined;
   memory.offeredBooking = true;
   const policy = currentPolicy(options, memory, plan);
-  return finish(
-    (policy ? policy + " " : "") +
-      "Would you like to book a repair visit, or would you prefer to leave a callback message for the shop?",
-    { step: "start" },
-  );
+  return finish((policy ? policy + " " : "") + question.text, {
+    step: "start",
+  });
 }

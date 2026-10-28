@@ -169,7 +169,7 @@ export function resolveQuote(
     const at = ` ${norm} `.indexOf(` ${n} `);
     if (at < 0) return false;
     const tail = ` ${norm} `.slice(at + n.length + 2).trim();
-    return !/^(pro|max|plus|ultra|fe|mini|se|5g|4g|lte|wifi|wi fi|\d+[a-z]*)\b/.test(
+    return !/^(pro|max|plus|ultra|fe|mini|se|xl|5g|4g|lte|wifi|wi fi|\d+[a-z]*)\b/.test(
       tail,
     );
   });
