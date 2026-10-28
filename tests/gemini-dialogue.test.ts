@@ -694,3 +694,31 @@ test("a current catalog compound variant keeps its own price when its base model
   assert.match(r.text, /229\.00/);
   assert.doesNotMatch(r.text, /189\.00/);
 });
+
+for (const description of ["died yesterday", "accidentally fell in water"]) {
+  test(`ordinary intake prose '${description}' keeps a known model for the next battery quote`, async () => {
+    const o = options();
+    o.knowledge.prices = [
+      {
+        id: "pixel-battery",
+        category: "Phone",
+        brand: "Google",
+        model: "Pixel 9",
+        repair: "Battery replacement",
+        priceCents: 6900,
+      },
+    ];
+    o.planner = async () =>
+      plan({
+        device: "Pixel",
+        model: "Pixel 9",
+        issue: description,
+        nextGoal: "power",
+      });
+    let r = await ask(o, { step: "start" }, `My Pixel 9 ${description}`);
+    assert.equal(r.state.assistant?.model, "Pixel 9");
+    r = await ask(o, r.state, "How much for battery replacement?");
+    assert.match(r.text, /69\.00/);
+    assert.equal(r.state.lastQuote?.model, "Pixel 9");
+  });
+}

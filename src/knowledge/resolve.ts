@@ -15,7 +15,7 @@ export function isModelContext(text: string) {
   const word = normalize(text).split(" ")[0];
   return (
     !word ||
-    /^(?:i|my|your|our|mine|the|is|was|are|were|has|have|had|got|gets|went|fell|took|needs?|with|without|and|or|but|for|to|from|of|on|in|at|it|its|that|this|which|what|how|can|could|would|will|do|does|did|please|thanks|thank|screen|display|glass|battery|camera|charging|charge|port|speaker|microphone|button|board|housing|back|front|repair|repairs|replacement|replace|fix|fixed|cost|costs|price|pricing|quote|estimate|water|liquid|damage|damaged|wet|broken|cracked|happened|stopped|broke|not|wont|doesnt|yesterday|today|currently|still|suddenly|about|device|phone|model|problem|issue|touch|power|powered|black|blank|flickering)$/.test(
+    /^(?:i|my|your|our|mine|the|is|was|are|were|has|have|had|got|gets|went|fell|took|needs?|with|without|and|or|but|for|to|from|of|on|in|at|it|its|that|this|which|what|how|can|could|would|will|do|does|did|please|thanks|thank|screen|display|glass|battery|camera|charging|charge|port|speaker|microphone|button|board|housing|back|front|repair|repairs|replacement|replace|fix|fixed|cost|costs|price|pricing|quote|estimate|water|liquid|damage|damaged|wet|broken|cracked|happened|stopped|broke|died|accidentally|not|wont|doesnt|yesterday|today|currently|still|suddenly|about|device|phone|model|problem|issue|touch|power|powered|black|blank|flickering)$/.test(
       word,
     )
   );
