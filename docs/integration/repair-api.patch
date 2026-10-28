@@ -63,10 +63,10 @@ index f05b11b..9531548 100644
 +cookie flow without live credentials; the separate receptionist repository has the
 +full two-application integration and browser checks.
 diff --git a/VALIDATION.md b/VALIDATION.md
-index 6f9b459..f39a5a5 100644
+index 6f9b459..4860a92 100644
 --- a/VALIDATION.md
 +++ b/VALIDATION.md
-@@ -209,3 +209,36 @@ All tests used local/disposable records, synthetic intercepted browser data and
+@@ -209,3 +209,54 @@ All tests used local/disposable records, synthetic intercepted browser data and
  - **8 mocked Chromium scenarios passed** for validation, failed-save draft retention, navigation guards, in-flight locking, successful field clearing and signed-in state, long current passwords, maximum new-password length, committed-save refresh failure without duplicate posting, mobile account layout, and public/admin/employee portal links. Zero page errors or horizontal overflow occurred; synthetic mobile screenshots were visually inspected.
  
  Verification used loopback/disposable PostgreSQL, synthetic browser fixtures and provider-stripped servers. No live administrator password, customer data, email or text was changed by these tests. Hosted deployment status is checked separately for the exact published commit.
@@ -103,12 +103,30 @@ index 6f9b459..f39a5a5 100644
 +provider settings and the owner's live repair-site URL were not available here,
 +so these results establish local/deployment preparation rather than a live
 +production connection.
++
++
++## Hosted authorization failure diagnosis
++
++The owner reached repair administrator approval but returned to the receptionist's
++previous generic authorization error. The actual hosted failure was not visible:
++source token rejection conflated machine credentials with authorization-code checks,
++and the receptionist neither displayed the connected sign-in error nor logged its
++stage. POST/token now returns INVALID_MACHINE_CREDENTIAL only at the failed machine
++authentication guard. Authenticated code/PKCE/session failures keep UNAUTHORIZED,
++and other endpoints keep their original behavior. No grant, key, code, verifier,
++cookie or raw error was added to output.
++
++Focused route regression was observed failing before the change and passing after.
++Source Node299/299, TypeScript and production Next build pass. A running local
++source endpoint separately verified distinct wrong-credential and invalid-code
++responses. The receiver supplies the safe user-facing stage messages. These changes
++improve diagnosis; they do not establish that the owner's live connection is fixed.
 diff --git a/app/api/integrations/receptionist/v1/[...path]/route.ts b/app/api/integrations/receptionist/v1/[...path]/route.ts
 new file mode 100644
-index 0000000..de5bdc3
+index 0000000..f8701c1
 --- /dev/null
 +++ b/app/api/integrations/receptionist/v1/[...path]/route.ts
-@@ -0,0 +1,289 @@
+@@ -0,0 +1,290 @@
 +import { NextRequest, NextResponse } from "next/server";
 +import { randomBytes, randomUUID } from "node:crypto";
 +import { cookies } from "next/headers";
@@ -301,7 +319,8 @@ index 0000000..de5bdc3
 +      target.searchParams.set("state", q.state);
 +      return NextResponse.redirect(target, 303);
 +    }
-+    if (!auth(request)) return fail("UNAUTHORIZED", 401);
++    if (!auth(request))
++      return fail(path === "token" ? "INVALID_MACHINE_CREDENTIAL" : "UNAUTHORIZED", 401);
 +    const raw = await request.json();
 +    if (path === "token") {
 +      const b = z
@@ -450,14 +469,15 @@ index 0000000..eb8019f
 +});
 diff --git a/lib/receptionist-auth.test.ts b/lib/receptionist-auth.test.ts
 new file mode 100644
-index 0000000..ca979e1
+index 0000000..3482527
 --- /dev/null
 +++ b/lib/receptionist-auth.test.ts
-@@ -0,0 +1,140 @@
+@@ -0,0 +1,233 @@
 +import test from "node:test";
 +import assert from "node:assert/strict";
 +import { AsyncLocalStorage } from "node:async_hooks";
 +import type { WorkStore } from "next/dist/server/app-render/work-async-storage.external";
++import type { Prisma } from "@prisma/client";
 +import {
 +  machineAuthorized,
 +  pkceDigest,
@@ -592,6 +612,98 @@ index 0000000..ca979e1
 +    assert.equal(response.status, 401);
 +    assert.deepEqual(await response.json(), { ok: false, code: "UNAUTHORIZED" });
 +    assert.deepEqual(cookies, []);
++  }
++});
++
++test("token machine-auth failures have a distinct diagnostic while other endpoints retain UNAUTHORIZED", async () => {
++  const [{ NextRequest }, route] = await Promise.all([
++    import("next/server"),
++    import("../app/api/integrations/receptionist/v1/[...path]/route"),
++  ]);
++  const previous = process.env.RECEPTIONIST_API_TOKEN;
++  process.env.RECEPTIONIST_API_TOKEN = "synthetic-machine-credential-for-auth-test";
++  try {
++    for (const authorization of [undefined, "Bearer incorrect-test-credential"]) {
++      const headers = authorization ? { authorization } : undefined;
++      const response = await route.POST(
++        new NextRequest("https://repair.test/api/integrations/receptionist/v1/token", {
++          method: "POST",
++          headers,
++        }),
++        { params: Promise.resolve({ path: ["token"] }) },
++      );
++      assert.equal(response.status, 401);
++      assert.deepEqual(await response.json(), {
++        ok: false,
++        code: "INVALID_MACHINE_CREDENTIAL",
++      });
++      assert.equal(response.headers.get("cache-control"), "private, no-store");
++    }
++    for (const path of ["challenges", "bookings"]) {
++      const response = await route.POST(
++        new NextRequest("https://repair.test/api/integrations/receptionist/v1/" + path, {
++          method: "POST",
++          headers: { authorization: "Bearer incorrect-test-credential" },
++        }),
++        { params: Promise.resolve({ path: [path] }) },
++      );
++      assert.equal(response.status, 401);
++      assert.deepEqual(await response.json(), { ok: false, code: "UNAUTHORIZED" });
++    }
++    const read = await route.GET(
++      new NextRequest("https://repair.test/api/integrations/receptionist/v1/business"),
++      { params: Promise.resolve({ path: ["business"] }) },
++    );
++    assert.equal(read.status, 401);
++    assert.deepEqual(await read.json(), { ok: false, code: "UNAUTHORIZED" });
++  } finally {
++    if (previous === undefined) delete process.env.RECEPTIONIST_API_TOKEN;
++    else process.env.RECEPTIONIST_API_TOKEN = previous;
++  }
++});
++
++test("a valid machine credential with a missing authorization code remains UNAUTHORIZED", async () => {
++  const [{ NextRequest }, { db }, route] = await Promise.all([
++    import("next/server"),
++    import("./db"),
++    import("../app/api/integrations/receptionist/v1/[...path]/route"),
++  ]);
++  const previous = process.env.RECEPTIONIST_API_TOKEN;
++  const originalTransaction = db.$transaction;
++  const credential = "synthetic-machine-credential-for-auth-test";
++  process.env.RECEPTIONIST_API_TOKEN = credential;
++  let codeLookups = 0;
++  const tx = {
++    bookingLock: { update: async () => ({ id: 1, revision: 1 }) },
++    receptionistRecord: {
++      findUnique: async () => {
++        codeLookups++;
++        return null;
++      },
++    },
++  } as unknown as Prisma.TransactionClient;
++  db.$transaction = (async (work: (value: Prisma.TransactionClient) => Promise<unknown>) =>
++    work(tx)) as typeof db.$transaction;
++  try {
++    const response = await route.POST(
++      new NextRequest("https://repair.test/api/integrations/receptionist/v1/token", {
++        method: "POST",
++        headers: { authorization: "Bearer " + credential, "content-type": "application/json" },
++        body: JSON.stringify({
++          code: "missing-synthetic-authorization-code",
++          verifier: "v".repeat(43),
++          redirectUri: "https://receptionist.test/api/auth/callback",
++        }),
++      }),
++      { params: Promise.resolve({ path: ["token"] }) },
++    );
++    assert.equal(response.status, 401);
++    assert.deepEqual(await response.json(), { ok: false, code: "UNAUTHORIZED" });
++    assert.equal(codeLookups, 1, "valid machine auth reaches the actual code-validation workflow");
++  } finally {
++    db.$transaction = originalTransaction;
++    if (previous === undefined) delete process.env.RECEPTIONIST_API_TOKEN;
++    else process.env.RECEPTIONIST_API_TOKEN = previous;
 +  }
 +});
 diff --git a/lib/receptionist-catalog.test.ts b/lib/receptionist-catalog.test.ts

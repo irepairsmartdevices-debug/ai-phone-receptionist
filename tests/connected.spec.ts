@@ -3,14 +3,15 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {Pool} from "pg";
-import {randomUUID,createHash} from "node:crypto";
+import { Pool } from "pg";
+import { randomUUID, createHash } from "node:crypto";
 test("administrator authorization connects both apps across sites and confirms a local test-ticket cancellation", async ({
   page,
   context,
 }) => {
   test.setTimeout(60_000);
-  const repairOrigin = process.env.REPAIR_TEST_ORIGIN ?? "http://localhost:3001";
+  const repairOrigin =
+    process.env.REPAIR_TEST_ORIGIN ?? "http://localhost:3001";
   expect(["localhost", "127.0.0.1"]).toContain(new URL(repairOrigin).hostname);
   const dir = mkdtempSync(join(tmpdir(), "staff-auth-"));
   try {
@@ -46,11 +47,21 @@ test("administrator authorization connects both apps across sites and confirms a
     if (new URL(repairOrigin).hostname !== "localhost") {
       // A distinct repair hostname exercises production SameSite=Strict rules.
       await page
-        .getByRole("link", { name: "Continue to administrator approval", exact: true })
+        .getByRole("link", {
+          name: "Continue to administrator approval",
+          exact: true,
+        })
         .click();
     }
-    await page.getByRole("button", { name: "Connect admin account", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Connect admin account", exact: true })
+      .click();
     await expect(page).toHaveURL("http://localhost:3000/");
+    expect(
+      (await context.cookies("http://localhost:3000/api/auth/callback")).some(
+        (cookie) => cookie.name === "staff_auth_pending",
+      ),
+    ).toBe(false);
     await page.goto("/test");
     await expect(
       page.getByText("Connected mode", { exact: false }),
@@ -77,22 +88,74 @@ test("administrator authorization connects both apps across sites and confirms a
     await expect(
       page.getByText("is now cancelled.", { exact: false }),
     ).toBeVisible();
-    const pool=new Pool({connectionString:'postgresql://receptionist:local-development-only@127.0.0.1:55432/receptionist'});
-    const conversationId=randomUUID(),callSid='CA'+randomUUID().replaceAll('-',''),code='654321';
-    try{
-      await pool.query('INSERT INTO conversations(id,mode) VALUES($1,$2)',[conversationId,'connected']);
-      await pool.query('INSERT INTO voice_calls(call_sid,conversation_id,next_turn) VALUES($1,$2,$3)',[callSid,conversationId,randomUUID()]);
-      await pool.query('INSERT INTO voice_pairings(code_hash,call_sid,expires_at) VALUES($1,$2,$3)',[createHash('sha256').update(callSid+':'+code).digest('hex'),callSid,new Date(Date.now()+300000)]);
-      await page.goto('/calls');
-      const call=page.locator('.settings-row').filter({hasText:'Call …'+callSid.slice(-8)});
-      await call.getByLabel('Call pairing code').fill(code);
-      await call.getByRole('button',{name:'Pair',exact:true}).click();
-      await expect(call.getByRole('status')).toHaveText('Paired to your authenticated staff session.');
-      const linked=await pool.query('SELECT paired_session FROM voice_calls WHERE call_sid=$1',[callSid]);
+    const pool = new Pool({
+      connectionString:
+        "postgresql://receptionist:local-development-only@127.0.0.1:55432/receptionist",
+    });
+    const conversationId = randomUUID(),
+      callSid = "CA" + randomUUID().replaceAll("-", ""),
+      code = "654321";
+    try {
+      await pool.query("INSERT INTO conversations(id,mode) VALUES($1,$2)", [
+        conversationId,
+        "connected",
+      ]);
+      await pool.query(
+        "INSERT INTO voice_calls(call_sid,conversation_id,next_turn) VALUES($1,$2,$3)",
+        [callSid, conversationId, randomUUID()],
+      );
+      await pool.query(
+        "INSERT INTO voice_pairings(code_hash,call_sid,expires_at) VALUES($1,$2,$3)",
+        [
+          createHash("sha256")
+            .update(callSid + ":" + code)
+            .digest("hex"),
+          callSid,
+          new Date(Date.now() + 300000),
+        ],
+      );
+      await page.goto("/calls");
+      const call = page
+        .locator(".settings-row")
+        .filter({ hasText: "Call …" + callSid.slice(-8) });
+      await call.getByLabel("Call pairing code").fill(code);
+      await call.getByRole("button", { name: "Pair", exact: true }).click();
+      await expect(call.getByRole("status")).toHaveText(
+        "Paired to your authenticated staff session.",
+      );
+      const linked = await pool.query(
+        "SELECT paired_session FROM voice_calls WHERE call_sid=$1",
+        [callSid],
+      );
       expect(linked.rows[0].paired_session).toBeTruthy();
-    }finally{await pool.query('DELETE FROM conversations WHERE id=$1',[conversationId]);await pool.end();}
-
+    } finally {
+      await pool.query("DELETE FROM conversations WHERE id=$1", [
+        conversationId,
+      ]);
+      await pool.end();
+    }
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("expired connection callbacks show a useful sign-in error without granting access", async ({
+  page,
+  context,
+}) => {
+  await page.goto(
+    "/api/auth/callback?state=expired-test-request&code=expired-test-code",
+  );
+  await expect(page).toHaveURL(/\/sign-in\?error=connection_request_expired$/);
+  await expect(page.getByRole("alert").filter({ hasText: "This connection request" })).toContainText(
+    "expired or its browser cookie is missing",
+  );
+  await expect(
+    page.getByRole("link", { name: "Connect admin account" }),
+  ).toBeVisible();
+  expect(
+    (await context.cookies()).some(
+      (cookie) => cookie.name === "receptionist_session",
+    ),
+  ).toBe(false);
 });

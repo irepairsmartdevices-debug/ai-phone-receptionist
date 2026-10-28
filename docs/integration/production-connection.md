@@ -69,3 +69,30 @@ private settings into Production for each project, updating only those keys and
 retaining existing database, AI and phone settings. Redeploy the repair project
 first and wait for Ready, then redeploy the receptionist and authorize the
 connection. The private credential itself is never stored in this repository.
+
+
+## Failed administrator sign-in
+
+After a failed callback the sign-in page now shows an allowlisted reason. Start
+from `/sign-in` using one tab rather than reusing an old approval URL. Pending
+browser requests expire after five minutes. Successful and matched failed requests
+clear their pending cookie at its original `/api/auth` path; an older mismatched
+callback does not erase a newer request.
+
+- Rejected connection key: compare `REPAIR_SERVICE_TOKEN` in the receptionist with
+  `RECEPTIONIST_API_TOKEN` in the repair app privately. Copy only the value, save
+  in Production and redeploy both. Do not send key values in chat or logs.
+- Expired or mismatched browser request: start a fresh connection in one tab.
+- Repair authorization rejected: start a fresh request with an administrator;
+  source code, PKCE, expired/revoked account checks still apply.
+- Invalid configuration or unexpected repair response: check the configured URLs,
+  deployed integration and deployment protection.
+- Repair app unavailable: check the repair deployment and request timeout/network.
+- Session save failed: check the receptionist database and sessions table.
+
+Receptionist logs contain only an error reason and optional HTTP status, without
+codes, verifiers, grants, cookies, connection keys or raw provider/database errors.
+On the repair API only POST/token distinguishes failed machine authentication as
+`INVALID_MACHINE_CREDENTIAL`; authenticated code-validation errors still use
+`UNAUTHORIZED`. Old deployments may still return the generic rejection until the
+new source build is Ready. A Ready label alone does not verify the connection.

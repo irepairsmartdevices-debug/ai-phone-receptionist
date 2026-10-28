@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
 import { authorizationRequest } from "../../../../src/auth/exchange";
-export async function GET() {
+export async function GET(request: Request) {
   try {
     if ((process.env.RECEPTIONIST_MODE ?? "fixture") !== "connected")
-      throw Error();
+      return NextResponse.json(
+        { error: "Configure the repair-service connection first." },
+        { status: 503 },
+      );
     const { url, state, verifier } = authorizationRequest();
     const r = NextResponse.redirect(url);
     r.cookies.set("staff_auth_pending", JSON.stringify({ state, verifier }), {
@@ -15,9 +18,8 @@ export async function GET() {
     });
     return r;
   } catch {
-    return NextResponse.json(
-      { error: "Configure the repair-service connection first." },
-      { status: 503 },
+    return NextResponse.redirect(
+      new URL("/sign-in?error=repair_configuration", request.url),
     );
   }
 }

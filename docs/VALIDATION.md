@@ -152,3 +152,28 @@ available, so a hosted connection is not yet claimed.
 Final receptionist checks: Node107/107 and TypeScript passed. The refreshed
 portable patch applies cleanly to its documented811fcb1 base. Patch context
 whitespace is preserved as required by the unified diff format.
+
+
+## Connected sign-in diagnostics and pending-cookie cleanup
+
+The live screenshots showed a completed repair approval followed by the former
+silent authorization error. Hosted settings and the actual failure were not
+accessible to this cloud task, so no successful live fix is claimed. Added static
+allowlisted sign-in messages and enum/status-only logs for pending-cookie/state,
+configuration, machine credential, authorization, response/network, administrator
+role and session-storage failure stages. The source token endpoint now supplies a
+distinct failed-machine-authentication code without changing other endpoints.
+
+Regressions observed the generic failure and ignored sign-in error before changes.
+The callback now clears pending cookies at `/api/auth`, preserving a newer cookie
+when an older callback has a different state. Tests reject all failure cases without
+creating a session, preserve successful administrator authorization and verify no
+keys/codes/verifiers/grants/raw errors are logged or reflected. Malformed-origin
+fallback and fixture-mode compatibility regressions were also verified red/green.
+
+Final verification: receptionist Node115/115; repair Node299/299; both production
+builds and TypeScript passed. Actual local token requests distinguished a wrong
+machine credential from a rejected code. Connected production browser suite2/2
+passed across separate local sites, including correct cookie removal, explicit
+local-test cancellation and an expired callback displaying its reason. A fresh
+hosted attempt after deployment is still needed to identify the owner's live cause.

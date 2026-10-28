@@ -37,7 +37,7 @@ Messages and settings persist in PostgreSQL. Verification codes are redacted. Te
 
 ## Connect the repair software locally
 
-The hosted integration is published in the repair repository on `main`, including commit `a44e20c`. This session prepared it against current source base `811fcb1` in `/workspace/.worktrees/repair-receptionist-connect`, preserving newer catalog and time-clock work. A reviewable patch against that base is retained in `docs/integration/repair-api.patch`. Another Codex checkout must pull the current repair main to obtain the changes. The hosted variable and administrator authorization steps are in [Production connection](docs/integration/production-connection.md); publishing the code alone does not configure those private values.
+The hosted integration is published in the repair repository on `main`, including commit `000a9a8`. This session prepared it against current source base `811fcb1` in `/workspace/.worktrees/repair-receptionist-connect`, preserving newer catalog and time-clock work. A reviewable patch against that base is retained in `docs/integration/repair-api.patch`. Another Codex checkout must pull the current repair main to obtain the changes. The hosted variable and administrator authorization steps are in [Production connection](docs/integration/production-connection.md); publishing the code alone does not configure those private values.
 
 The local configuration helper creates matching random development API credentials without printing them, only when configuration is absent. Existing configuration is preserved. In the repair checkout:
 
@@ -129,7 +129,7 @@ its source offering disappears; standalone manual entries remain usable during a
 Both test conversations and configured connected voice use this knowledge. No extra database
 migration is required: records use the existing `settings` table. Connecting real catalog prices
 still requires deploying the separate repair integration. Its retained commit is
-`a44e20c`; the updated portable patch is in
+`000a9a8`; the updated portable patch is in
 `docs/integration/repair-api.patch`. Older source APIs are accepted, with conservative clarification
 when category/brand metadata is missing.
 

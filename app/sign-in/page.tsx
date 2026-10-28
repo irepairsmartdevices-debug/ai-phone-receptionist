@@ -1,4 +1,5 @@
 import { demoConfigured } from "../../src/auth/demo";
+import { authorizationMessage } from "../../src/auth/errors";
 export const dynamic = "force-dynamic";
 export default async function SignIn({
   searchParams,
@@ -52,6 +53,11 @@ export default async function SignIn({
             Sign in as an administrator in your repair software, then authorize
             this receptionist. Your repair password stays in the repair app.
           </p>
+          {error && (
+            <p className="error" role="alert">
+              {authorizationMessage(error)}
+            </p>
+          )}
           <a className="button primary" href="/api/auth/start">
             Connect admin account →
           </a>
