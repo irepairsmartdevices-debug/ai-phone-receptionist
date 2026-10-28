@@ -179,13 +179,16 @@ export function publicDialogueInput(input: GeminiInput) {
             power: clean(memory.details.power),
           }
         : undefined,
-      history: (memory.history ?? []).slice(-8).map((entry) => ({
-        role:
-          entry.role === "assistant"
-            ? ("assistant" as const)
-            : ("user" as const),
-        text: redactProviderText(entry.text, 600),
-      })),
+      history: (memory.history ?? [])
+        .filter((entry) => entry.provenance === "public")
+        .slice(-8)
+        .map((entry) => ({
+          role:
+            entry.role === "assistant"
+              ? ("assistant" as const)
+              : ("user" as const),
+          text: redactProviderText(entry.text, 600),
+        })),
     },
     answers: boundedList(
       input.answers

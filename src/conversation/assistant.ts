@@ -6,6 +6,7 @@ import {
   normalize,
   isPriceQuestion,
   quoteCatalog,
+  isModelContext,
 } from "../knowledge/resolve";
 import { resolveStores, renderDirections } from "./directions";
 import type {
@@ -38,10 +39,14 @@ function memoryFrom(value: DialogueMemory | undefined): DialogueMemory {
     model: bound(value.model, 120),
     issue: bound(value.issue, 1000),
     details: boundedDetails(value.details),
-    history: (value.history ?? []).slice(-8).map((m) => ({
-      role: m.role === "assistant" ? "assistant" : "user",
-      text: redact(String(m.text)).slice(0, 600),
-    })),
+    history: (value.history ?? [])
+      .filter((m) => m.provenance === "public")
+      .slice(-8)
+      .map((m) => ({
+        provenance: "public",
+        role: m.role === "assistant" ? "assistant" : "user",
+        text: redact(String(m.text)).slice(0, 600),
+      })),
   };
 }
 const no = (text: string) =>
@@ -71,7 +76,17 @@ function explicitModel(text: string) {
   const match = text.match(
     /\b(iPhone\s*\d{1,3}(?:\s*(?:Pro|Max|Plus|Mini|Ultra|XL|5G|4G|LTE|Wi-Fi))*|iPad\s+(?:Pro|Air|Mini)?\s*\d{1,3}(?:\s*(?:Pro|Air|Mini))?|(?:Samsung\s+)?Galaxy\s+[A-Z]?\d{1,3}(?:\s*(?:Ultra|Plus|FE|Pro|Max|XL|5G|4G|LTE|Wi-Fi))*|Pixel\s*\d{1,3}(?:\s*(?:Pro|XL|Max|Plus|Ultra|5G|4G|LTE|Wi-Fi))*)\b/i,
   );
-  return match?.[0];
+  if (!match) return undefined;
+  let model = match[0];
+  let tail = text.slice(match.index! + model.length);
+  // Preserve caller-supplied unknown suffixes until ordinary repair prose.
+  for (let count = 0; count < 6; count++) {
+    const suffix = tail.match(/^\s+([\p{L}\p{N}][\p{L}\p{N}+-]*)/u);
+    if (!suffix || isModelContext(suffix[1])) break;
+    model += suffix[0];
+    tail = tail.slice(suffix[0].length);
+  }
+  return model;
 }
 function deviceClass(text: string) {
   return /ipad|tablet/i.test(text)
@@ -254,15 +269,31 @@ export async function runAssistantTurn(
     options.knowledge,
     options.answerMatcher,
   );
+  const publicStep = (step: string | undefined) =>
+    !step || step === "start" || step === "pricing";
+  const protectedTurn =
+    !publicStep(state.step) ||
+    guarded(value) ||
+    ["ticket", "booking", "staff_change"].includes(intentHint ?? "");
   const finish = (
     answer: string,
     next: AssistantState = state,
   ): AssistantTurn => {
-    memory.history = [
-      ...(memory.history ?? []),
-      { role: "user", text: redact(value).slice(0, 600) },
-      { role: "assistant", text: redact(answer).slice(0, 600) },
-    ].slice(-8) as NonNullable<DialogueMemory["history"]>;
+    // Private workflow input and results never become provider-eligible history.
+    if (!protectedTurn && publicStep(next.step))
+      memory.history = [
+        ...(memory.history ?? []),
+        {
+          role: "user",
+          text: redact(value).slice(0, 600),
+          provenance: "public",
+        },
+        {
+          role: "assistant",
+          text: redact(answer).slice(0, 600),
+          provenance: "public",
+        },
+      ].slice(-8) as NonNullable<DialogueMemory["history"]>;
     return { text: answer, state: { ...next, assistant: memory } };
   };
   const delegate = async (input = value, hint = intentHint) => {
@@ -443,6 +474,11 @@ export async function runAssistantTurn(
       value,
     );
   if (resetDevice) {
+    // Retain a known observation only if it cannot carry the rejected identity.
+    const symptoms = memory.details?.symptoms;
+    memory.issue =
+      symptoms && !grounded(memory.model, symptoms) ? symptoms : undefined;
+    memory.history = [];
     memory.model = undefined;
     memory.details = {};
     memory.detailsKnown = false;
@@ -549,13 +585,33 @@ export async function runAssistantTurn(
     }
     if (
       model &&
-      !currentModel &&
+      (!currentModel ||
+        (grounded(model, value) &&
+          normalize(model).startsWith(normalize(currentModel) + " "))) &&
       !foundModel &&
-      (!memory.model || memory.model === previousMemory.model) &&
+      (!memory.model ||
+        memory.model === previousMemory.model ||
+        memory.model === currentModel) &&
       (!grounded(model, value) || exactModelIn(value, model))
     )
       memory.model = model;
-    if (issue && (!memory.issue || memory.issue === previousMemory.issue))
+    if (
+      correction &&
+      !report(value) &&
+      plan.reset === "issue" &&
+      issue &&
+      grounded(issue, value)
+    ) {
+      memory.issue = issue;
+      memory.details = {};
+      memory.detailsKnown = false;
+      memory.offeredBooking = false;
+      memory.askedGoal = undefined;
+      memory.history = [];
+    } else if (
+      issue &&
+      (!memory.issue || memory.issue === previousMemory.issue)
+    )
       memory.issue = issue;
     memory.details = observations(value, memory, plan.details);
     if (memory.details.symptoms) memory.detailsKnown = true;

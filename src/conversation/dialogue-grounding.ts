@@ -1,5 +1,5 @@
 import { redact } from "../persistence/conversations";
-import { normalize } from "../knowledge/resolve";
+import { normalize, exactModelMention } from "../knowledge/resolve";
 import type {
   DialogueCatalogItem,
   DialogueDetails,
@@ -34,15 +34,7 @@ export function grounded(value: string | null | undefined, text: string) {
   );
 }
 // Keep an unlisted variant intact: a selected shorter catalog model is not evidence.
-export function exactModelIn(text: string, model: string) {
-  const source = ` ${normalize(text)} `;
-  const candidate = normalize(model);
-  const at = source.indexOf(` ${candidate} `);
-  if (at < 0) return false;
-  return !/^(pro|max|plus|ultra|fe|mini|se|xl|5g|4g|lte|wifi|wi fi|\d+[a-z]*)\b/.test(
-    source.slice(at + candidate.length + 2).trim(),
-  );
-}
+export const exactModelIn = exactModelMention;
 export function catalogModel(text: string, catalog: DialogueCatalogItem[]) {
   const matches = [
     ...new Set(

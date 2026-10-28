@@ -9,6 +9,36 @@ export const normalize = (value: string) =>
     .replace(/\+/g, " plus ")
     .replace(/[^\p{L}\p{N}]+/gu, " ")
     .trim();
+// A model mention must end at ordinary sentence/repair context, not at an
+// arbitrary unknown token. This protects variants absent from today's catalog.
+export function isModelContext(text: string) {
+  const word = normalize(text).split(" ")[0];
+  return (
+    !word ||
+    /^(?:i|my|your|our|mine|the|is|was|are|were|has|have|had|got|gets|went|fell|took|needs?|with|without|and|or|but|for|to|from|of|on|in|at|it|its|that|this|which|what|how|can|could|would|will|do|does|did|please|thanks|thank|screen|display|glass|battery|camera|charging|charge|port|speaker|microphone|button|board|housing|back|front|repair|repairs|replacement|replace|fix|fixed|cost|costs|price|pricing|quote|estimate|water|liquid|damage|damaged|wet|broken|cracked|happened|stopped|broke|not|wont|doesnt|yesterday|today|currently|still|suddenly|about|device|phone|model|problem|issue|touch|power|powered|black|blank|flickering)$/.test(
+      word,
+    )
+  );
+}
+export function exactModelMention(text: string, model: string) {
+  // Keep token offsets so punctuation remains a sentence boundary. Normalizing
+  // the whole string first would turn "Pixel 9, Pixel 8" into a false suffix.
+  const tokens = [...text.matchAll(/[\p{L}\p{N}]+|\+/gu)];
+  const name = normalize(model).split(" ");
+  return tokens.some((token, start) => {
+    if (
+      !name.every(
+        (word, index) => normalize(tokens[start + index]?.[0] ?? "") === word,
+      )
+    )
+      return false;
+    const last = tokens[start + name.length - 1];
+    const next = tokens[start + name.length];
+    if (!next) return true;
+    const separator = text.slice(last.index! + last[0].length, next.index);
+    return /[.!?;,]/.test(separator) || isModelContext(text.slice(next.index));
+  });
+}
 const contains = (text: string, phrase: string) =>
   ` ${normalize(text)} `.includes(` ${normalize(phrase)} `);
 export type QuoteOffering = {
@@ -164,15 +194,7 @@ export function resolveQuote(
   // Prefer the longest complete variant. A suffix absent from the stored model is
   // not evidence of the shorter model (14 Pro Max must never resolve to 14 Pro).
   const models = unique(available.map((o) => o.model));
-  const mentionedModels = models.filter((m) => {
-    const n = normalize(m);
-    const at = ` ${norm} `.indexOf(` ${n} `);
-    if (at < 0) return false;
-    const tail = ` ${norm} `.slice(at + n.length + 2).trim();
-    return !/^(pro|max|plus|ultra|fe|mini|se|xl|5g|4g|lte|wifi|wi fi|\d+[a-z]*)\b/.test(
-      tail,
-    );
-  });
+  const mentionedModels = models.filter((m) => exactModelMention(text, m));
   if (!mentionedModels.length && /\b[a-z]*\d+[a-z0-9]*\b/i.test(norm))
     return { text: missingPrice };
   if (mentionedModels.length > 1)

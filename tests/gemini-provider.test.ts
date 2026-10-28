@@ -287,7 +287,13 @@ test("provider sends bounded public context with customer contacts, codes and pr
       "x".repeat(10000),
     memory: {
       device: "phone",
-      history: [{ role: "user", text: "alice@example.com 123456" }],
+      history: [
+        {
+          role: "user",
+          text: "alice@example.com 123456",
+          provenance: "public",
+        },
+      ],
       customerPhone: "PRIVATE-PHONE",
       verificationCode: "PRIVATE-CODE",
     } as any,

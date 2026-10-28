@@ -45,7 +45,11 @@ export type DialogueMemory = {
   detailsKnown?: boolean;
   choosingStore?: boolean;
   asked?: "device" | "model" | "details";
-  history?: { role: "user" | "assistant"; text: string }[];
+  history?: {
+    role: "user" | "assistant";
+    text: string;
+    provenance?: "public";
+  }[];
 };
 export type DialoguePlan = {
   details?: DialogueDetails;

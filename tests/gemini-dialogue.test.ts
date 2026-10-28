@@ -407,3 +407,290 @@ test("grounded observational details support the customer's own liquid and sympt
   assert.equal(r.state.assistant?.details?.power, "it shut down");
   assert.match(r.text, /when/i);
 });
+
+test("completed private verification and legacy history never reach a later Gemini request", async () => {
+  const { createAssistantProviders } = await import(
+    "../src/providers/assistant"
+  );
+  const o = options();
+  const originalTicket = o.service.ticket.bind(o.service);
+  o.service.ticket = async (...args) => {
+    const result = await originalTicket(...args);
+    return result.ok
+      ? {
+          ok: true,
+          value: {
+            ...result.value,
+            device: "PrivateCustomerDevice",
+            service: "PrivateRepairService",
+            location: "PrivateCollectionLocation",
+          },
+        }
+      : result;
+  };
+  let r = await ask(o, { step: "start" }, "My Pixel 9 has a cracked screen");
+  r = await ask(o, r.state, "ticket status");
+  r = await ask(o, r.state, "1001");
+  assert.equal(r.state.step, "verify");
+  r = await ask(o, r.state, "PrivateVerificationUserText");
+  r = await ask(o, r.state, "123456");
+  assert.equal(r.state.step, "start");
+  assert.match(r.text, /PrivateCustomerDevice/);
+  const requestBodies: string[] = [];
+  const fetcher: typeof fetch = async (_url, init) => {
+    requestBodies.push(String(init?.body));
+    return Response.json({
+      candidates: [
+        {
+          finishReason: "STOP",
+          content: {
+            parts: [{ text: JSON.stringify(plan({ nextGoal: "power" })) }],
+          },
+        },
+      ],
+    });
+  };
+  const publicTurn = async (state: AssistantState) =>
+    ask(
+      {
+        ...o,
+        ...createAssistantProviders(
+          { AI_PROVIDER: "gemini", GEMINI_API_KEY: "test-key" },
+          fetcher,
+        ),
+      },
+      state,
+      "Can you help with my device?",
+    );
+  await publicTurn(r.state);
+  assert.equal(requestBodies.length, 1);
+  assert.doesNotMatch(
+    requestBodies[0],
+    /PrivateCustomerDevice|PrivateRepairService|PrivateCollectionLocation|PrivateVerificationUserText|Ticket 1001|123456/,
+  );
+  const publicInput = JSON.parse(
+    JSON.parse(requestBodies[0]).contents[0].parts[0].text,
+  );
+  assert.ok(
+    publicInput.memory.history.some(
+      (entry: { text: string }) =>
+        entry.text === "My Pixel 9 has a cracked screen",
+    ),
+  );
+  await publicTurn({
+    step: "start",
+    assistant: {
+      device: "Pixel",
+      model: "Pixel 9",
+      issue: "cracked screen",
+      history: [
+        { role: "assistant", text: "LegacyPrivateTicketPayload" },
+        { role: "user", text: "LegacyPrivateUserText" },
+      ],
+    },
+  });
+  assert.equal(requestBodies.length, 2);
+  assert.doesNotMatch(
+    requestBodies[1],
+    /LegacyPrivateTicketPayload|LegacyPrivateUserText/,
+  );
+  assert.match(requestBodies[1], /Pixel 9|cracked screen/);
+});
+
+test("a later price request cannot restore a rejected model from the earlier issue text", async () => {
+  const o = options();
+  o.knowledge.prices = [
+    {
+      id: "screen",
+      category: "Phone",
+      brand: "Google",
+      model: "Pixel 9",
+      repair: "Screen repair",
+      priceCents: 14900,
+    },
+  ];
+  let r = await ask(o, { step: "start" }, "My Pixel 9 screen is cracked");
+  r = await ask(o, r.state, "How much?");
+  assert.match(r.text, /149\.00/);
+  r = await ask(o, r.state, "Actually, it's a different model");
+  assert.equal(r.state.assistant?.model, undefined);
+  r = await ask(o, r.state, "How much?");
+  assert.equal(r.state.lastQuote, undefined);
+  assert.equal(r.state.assistant?.model, undefined);
+  assert.doesNotMatch(r.text, /149\.00/);
+});
+
+test("a grounded issue correction discards old symptoms before a later semantic price request", async () => {
+  const o = options();
+  o.knowledge.prices = [
+    {
+      id: "screen",
+      category: "Phone",
+      brand: "Google",
+      model: "Pixel 9",
+      repair: "Screen repair",
+      priceCents: 14900,
+    },
+    {
+      id: "battery",
+      category: "Phone",
+      brand: "Google",
+      model: "Pixel 9",
+      repair: "Battery replacement",
+      priceCents: 7900,
+    },
+  ];
+  let r = await ask(o, { step: "start" }, "My Pixel 9 screen is cracked");
+  r = await ask(o, r.state, "How much?");
+  assert.match(r.text, /149\.00/);
+  o.planner = async () => plan({ issue: "battery", reset: "issue" });
+  r = await ask(o, r.state, "Actually, it's the battery");
+  o.planner = async () => plan({ action: "pricing" });
+  r = await ask(o, r.state, "What would that run me?");
+  assert.doesNotMatch(r.text, /149\.00|Screen repair/);
+  assert.match(r.text, /79\.00/);
+});
+
+test("unknown Fold and Lite variants cannot quote a catalog prefix on a later turn", async () => {
+  for (const suffix of ["Fold", "Lite"]) {
+    const o = options();
+    o.knowledge.prices = [
+      {
+        id: "pixel",
+        category: "Phone",
+        brand: "Google",
+        model: "Pixel 9 Pro",
+        repair: "Screen repair",
+        priceCents: 18900,
+      },
+    ];
+    o.planner = async () =>
+      plan({ model: `Pixel 9 Pro ${suffix}`, nextGoal: "power" });
+    let r = await ask(
+      o,
+      { step: "start" },
+      `My Pixel 9 Pro ${suffix} screen is cracked`,
+    );
+    assert.equal(r.state.assistant?.model, `Pixel 9 Pro ${suffix}`);
+    o.planner = async () =>
+      plan({ action: "pricing", catalogOfferingId: "manual:pixel" });
+    r = await ask(o, r.state, "What would that run me?");
+    assert.equal(r.state.lastQuote, undefined);
+    assert.doesNotMatch(r.text, /189\.00/);
+    // Direct deterministic pricing must also protect the same variant.
+    r = await ask(
+      o,
+      { step: "start" },
+      `How much for Pixel 9 Pro ${suffix} screen repair?`,
+    );
+    assert.equal(r.state.lastQuote, undefined);
+    assert.doesNotMatch(r.text, /189\.00/);
+  }
+});
+
+test("legacy history is omitted at the provider boundary while marked public history is usable", async () => {
+  const { createAssistantProviders } = await import(
+    "../src/providers/assistant"
+  );
+  let sent = "";
+  const providers = createAssistantProviders(
+    { AI_PROVIDER: "gemini", GEMINI_API_KEY: "test-key" },
+    async (_url, init) => {
+      sent = String(init?.body);
+      return Response.json({
+        candidates: [
+          {
+            finishReason: "STOP",
+            content: { parts: [{ text: JSON.stringify(plan({})) }] },
+          },
+        ],
+      });
+    },
+  );
+  await providers.planner({
+    text: "Can you help?",
+    memory: {
+      device: "Pixel",
+      model: "Pixel 9",
+      history: [
+        { role: "assistant", text: "LegacyPrivateTicketPayload" },
+        { role: "user", text: "PublicObservationMarker", provenance: "public" },
+      ],
+    },
+    answers: [],
+  });
+  assert.doesNotMatch(sent, /LegacyPrivateTicketPayload/);
+  assert.match(sent, /PublicObservationMarker/);
+});
+
+test("exact model boundaries preserve punctuation and ordinary prose without choosing among comma-separated devices", async () => {
+  const o = options();
+  o.knowledge.prices = [
+    {
+      id: "nine",
+      category: "Phone",
+      brand: "Google",
+      model: "Pixel 9",
+      repair: "Screen repair",
+      priceCents: 14900,
+    },
+    {
+      id: "eight",
+      category: "Phone",
+      brand: "Google",
+      model: "Pixel 8",
+      repair: "Screen repair",
+      priceCents: 12900,
+    },
+  ];
+  for (const text of [
+    "How much screen repair for Pixel 9? I dropped it",
+    "How much for Pixel 9, I cracked the screen",
+    "How much for Pixel 9 screen repair please?",
+  ]) {
+    const r = await ask(o, { step: "start" }, text);
+    assert.match(r.text, /149\.00/, text);
+  }
+  const ambiguous = await ask(
+    o,
+    { step: "start" },
+    "How much for Pixel 9, Pixel 8 screen repair?",
+  );
+  assert.equal(ambiguous.state.lastQuote, undefined);
+  assert.match(ambiguous.text, /one device|which exact model/i);
+  assert.doesNotMatch(ambiguous.text, /129\.00|149\.00/);
+});
+
+test("a current catalog compound variant keeps its own price when its base model is also listed", async () => {
+  const o = options();
+  o.knowledge.prices = [
+    {
+      id: "base",
+      category: "Phone",
+      brand: "Google",
+      model: "Pixel 9 Pro",
+      repair: "Screen repair",
+      priceCents: 18900,
+    },
+    {
+      id: "fold",
+      category: "Phone",
+      brand: "Google",
+      model: "Pixel 9 Pro Fold",
+      repair: "Screen repair",
+      priceCents: 22900,
+    },
+  ];
+  o.planner = async () => plan({ model: "Pixel 9 Pro", nextGoal: "power" });
+  let r = await ask(
+    o,
+    { step: "start" },
+    "My Pixel 9 Pro Fold screen is cracked",
+  );
+  assert.equal(r.state.assistant?.model, "Pixel 9 Pro Fold");
+  o.planner = async () =>
+    plan({ action: "pricing", catalogOfferingId: "manual:base" });
+  r = await ask(o, r.state, "What would that run me?");
+  assert.match(r.text, /229\.00/);
+  assert.doesNotMatch(r.text, /189\.00/);
+});
