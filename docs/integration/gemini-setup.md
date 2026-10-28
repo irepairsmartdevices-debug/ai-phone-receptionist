@@ -16,7 +16,7 @@ The existing repair integration supplies current prices and exact model variants
 | --- | --- |
 | `AI_PROVIDER` | `gemini` |
 | `GEMINI_API_KEY` | Your private Google key; choose **Secret** |
-| `GEMINI_MODEL` | `gemini-flash-latest`, or a supported version available in your project |
+| `GEMINI_MODEL` | `gemini-3.8-flash`, or a supported version available in your project |
 
 3. Save and redeploy the receptionist. Keep its repair-service, database and
    authentication settings. Its earlier OpenAI key can remain for explicit rollback;
@@ -27,8 +27,11 @@ The existing repair integration supplies current prices and exact model variants
    model and symptoms, then ask about a known repair price. Compare with the repair
    app. The check proves provider access, not every conversation outcome.
 
-The model alias comes from [Google's official JavaScript SDK quickstart](https://github.com/googleapis/js-genai#quickstart).
-Its underlying model can change. Account/model availability must be verified with
+The explicit Gemini 3.8 Flash model uses `MEDIUM` thinking, matching the owner's
+successful Playground test after the deployed request flagged its earlier thinking
+level. Other models retain their existing settings. Google's [official JavaScript
+SDK quickstart](https://github.com/googleapis/js-genai#quickstart) also uses the
+`gemini-flash-latest` alias, whose underlying model can change. Account/model availability must be verified with
 the connection check. API usage is billed or quota-limited by your Google account;
 no current price is assumed here.
 Use `AI_PROVIDER=openai` to deliberately restore the earlier OpenAI provider, or

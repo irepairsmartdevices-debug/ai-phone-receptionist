@@ -246,10 +246,15 @@ export async function generateGeminiJSON(
         generationConfig: {
           temperature: 0,
           maxOutputTokens,
-          // Gemini 3 Flash defaults to high thinking; bound short-turn latency.
-          // Other model families retain their own compatible defaults.
+          // Match the successful Gemini 3.8 Playground test's MEDIUM level.
+          // Other recognized Flash models retain their existing setting.
           ...(/^gemini-3(?:\.\d+)?-flash(?:-preview(?:-.+)?)?$/.test(model)
-            ? { thinkingConfig: { thinkingLevel: "MINIMAL" } }
+            ? {
+                thinkingConfig: {
+                  thinkingLevel:
+                    model === "gemini-3.8-flash" ? "MEDIUM" : "MINIMAL",
+                },
+              }
             : {}),
           responseMimeType: "application/json",
           responseJsonSchema: schema,

@@ -649,7 +649,35 @@ test("catalog and answer budgets reject references omitted from bounded public c
   assert.doesNotMatch(JSON.stringify(body), /privatePrice/);
 });
 
-test("Gemini 3 Flash bounds thinking for short plans and leaves custom model thinking settings alone", async () => {
+test("Gemini 3.8 can complete a check and plan when MINIMAL thinking is rejected", async () => {
+  let calls = 0;
+  const provider: typeof fetch = async (_url, init) => {
+    calls++;
+    const body = JSON.parse(String(init?.body));
+    if (body.generationConfig.thinkingConfig?.thinkingLevel === "MINIMAL")
+      return Response.json(
+        {
+          error: {
+            status: "INVALID_ARGUMENT",
+            message: "Unsupported thinking_level for this model",
+          },
+        },
+        { status: 400 },
+      );
+    const isCheck =
+      JSON.parse(body.contents[0].parts[0].text).check === "connection";
+    return gemini(isCheck ? { ok: true } : plan);
+  };
+  const settings = { ...env, GEMINI_MODEL: "gemini-3.8-flash" };
+  assert.equal((await checkAIConnection(settings, provider)).ok, true);
+  assert.deepEqual(
+    await createAssistantProviders(settings, provider).planner(input),
+    plan,
+  );
+  assert.equal(calls, 2);
+});
+
+test("Gemini 3.8 uses MEDIUM while other model thinking settings remain compatible", async () => {
   const bodies: any[] = [];
   const planner = createAssistantProviders(env, async (_url, init) => {
     bodies.push(JSON.parse(String(init?.body)));
@@ -667,14 +695,25 @@ test("Gemini 3 Flash bounds thinking for short plans and leaves custom model thi
   );
   assert.equal(
     bodies[0].generationConfig.thinkingConfig?.thinkingLevel,
-    "MINIMAL",
+    "MEDIUM",
   );
   assert.equal(
     bodies[1].generationConfig.thinkingConfig?.thinkingLevel,
-    "MINIMAL",
+    "MEDIUM",
   );
   assert.ok(bodies[1].generationConfig.maxOutputTokens >= 256);
   assert.ok(bodies[1].generationConfig.maxOutputTokens <= 512);
+  await checkAIConnection(
+    { ...env, GEMINI_MODEL: "gemini-3.7-flash" },
+    async (_url, init) => {
+      assert.equal(
+        JSON.parse(String(init?.body)).generationConfig.thinkingConfig
+          ?.thinkingLevel,
+        "MINIMAL",
+      );
+      return gemini({ ok: true });
+    },
+  );
   await checkAIConnection(
     { ...env, GEMINI_MODEL: "gemini-2.5-flash" },
     async (_url, init) => {

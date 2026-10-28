@@ -284,3 +284,18 @@ QA against a synthetic HTTP 400 verified rendering, reload persistence, private
 data omission and 390px layout. Review's optional-array TypeScript finding was
 fixed before publishing, with no remaining material findings. Live API access
 and the actual Google rejection still require the owner's next deployed check.
+
+## 2026-10-28: Match the working Gemini 3.8 thinking setting
+
+The owner's next deployed check returned HTTP 400 / INVALID_ARGUMENT and identified
+the thinking-level setting. The app forced MINIMAL, while the owner's successful
+Gemini 3.8 Playground test used MEDIUM. Requests for the exact `gemini-3.8-flash`
+model now use MEDIUM in both connection checks and conversation planning. Other
+model settings, token caps, deadlines and request counts remain unchanged.
+
+A synthetic provider rejecting MINIMAL reproduced failure before the change and
+accepted both check/planner requests afterward. Full Node suite 180/180, production
+build, TypeScript and whitespace checks passed; independent review found no material
+issues. Public documentation still broadly permits MINIMAL for Gemini 3 Flash, so
+this is a scoped compatibility adjustment rather than a universal support claim.
+The deployed API check and real multi-turn conversation remain to be verified.
