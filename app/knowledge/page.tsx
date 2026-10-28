@@ -2,6 +2,7 @@ import { requireAdmin } from "../../src/auth/guards";
 import { getKnowledge } from "../../src/knowledge/store";
 import { getService } from "../../src/repair/service";
 import KnowledgeClient from "./client";
+import { getAIStatus } from "../../src/providers/assistant";
 export const dynamic = "force-dynamic";
 export default async function KnowledgePage() {
   await requireAdmin();
@@ -29,7 +30,7 @@ export default async function KnowledgePage() {
         sourceOfferings={source?.ok ? source.value.offerings : []}
         sourceAvailable={!!source?.ok}
         fixture={(process.env.RECEPTIONIST_MODE ?? "fixture") === "fixture"}
-        semanticAvailable={!!process.env.AI_PROVIDER_KEY}
+        semanticAvailable={getAIStatus().configured}
       />
     </>
   );

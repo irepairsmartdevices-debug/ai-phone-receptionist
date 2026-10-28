@@ -1,0 +1,106 @@
+"use client";
+import { useState } from "react";
+import type { AIReadiness } from "../../src/providers/readiness";
+
+const reasons: Record<string, string> = {
+  configuration: "Check the selected AI provider and model in Vercel.",
+  missing_key: "Add this provider's API key in Vercel, then redeploy.",
+  authentication:
+    "The provider rejected the API key. Check its access, then redeploy after updating it.",
+  model:
+    "This model is unavailable for your account. Check the configured model in Vercel.",
+  quota:
+    "The provider's usage limit was reached. Check your Google or OpenAI account's quota and billing.",
+  timeout: "The provider took too long to respond. Please try again shortly.",
+  unavailable:
+    "The AI provider could not be reached. Please try again shortly.",
+  response:
+    "The AI provider returned an unsupported response. Check the model and try again.",
+};
+export default function AIConnection({ initial }: { initial: AIReadiness }) {
+  const [state, setState] = useState(initial);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const name =
+    state.provider === "gemini"
+      ? "Gemini"
+      : state.provider === "openai"
+        ? "OpenAI"
+        : "AI";
+  async function check() {
+    setBusy(true);
+    setMessage("");
+    try {
+      const response = await fetch("/api/ai/check", { method: "POST" });
+      const data = await response.json();
+      if (
+        data &&
+        typeof data.configured === "boolean" &&
+        ["gemini", "openai", "none"].includes(data.provider)
+      )
+        setState(data);
+      if (response.status === 429)
+        setMessage(
+          `Please wait ${response.headers.get("Retry-After") ?? "30"} seconds before another check.`,
+        );
+      else if (!response.ok && data?.error)
+        setMessage(
+          "The check could not finish. Sign in as administrator and try again.",
+        );
+    } catch {
+      setMessage("The check could not finish. Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <section className="panel" aria-labelledby="ai-connection-heading">
+      <div className="section-heading">
+        <h2 id="ai-connection-heading">AI connection</h2>
+        <span>ADMINISTRATOR</span>
+      </div>
+      <p>
+        {name}
+        {state.model ? ` · ${state.model}` : ""}
+      </p>
+      <p role="status">
+        {state.lastCheck
+          ? state.lastCheck.ok
+            ? "Connection check passed."
+            : "Connection check failed."
+          : state.configured
+            ? "Configured · connection not yet checked."
+            : "API key is not configured for this provider."}
+      </p>
+      {state.lastCheck && (
+        <p>
+          Last checked:{" "}
+          <time dateTime={state.lastCheck.checkedAt}>
+            {state.lastCheck.checkedAt
+              .replace("T", " ")
+              .replace(/\.\d+Z$/, " UTC")}
+          </time>
+        </p>
+      )}
+      {(!state.configured || (state.lastCheck && !state.lastCheck.ok)) && (
+        <p role="alert">
+          {reasons[
+            state.lastCheck?.reason ?? state.reason ?? "configuration"
+          ] ?? reasons.configuration}
+        </p>
+      )}
+      {message && <p role="alert">{message}</p>}
+      <button
+        type="button"
+        onClick={check}
+        disabled={busy || !state.configured}
+      >
+        {busy ? "Checking…" : `Test ${name} connection`}
+      </button>
+      <p className="muted">
+        This check sends a small test request to your selected AI provider. Your
+        API key stays private.
+      </p>
+    </section>
+  );
+}

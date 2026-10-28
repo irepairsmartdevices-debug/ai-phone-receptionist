@@ -11,11 +11,10 @@ import { requireStaff, assertMutationOrigin } from "../../../src/auth/guards";
 import { withAudit } from "../../../src/repair/audit";
 import { getService } from "../../../src/repair/service";
 import { getKnowledge } from "../../../src/knowledge/store";
-import { matchCustomAnswer } from "../../../src/providers/knowledge";
 import { type State } from "../../../src/conversation/engine";
 import { runAssistantTurn } from "../../../src/conversation/assistant";
 import type { AssistantState } from "../../../src/conversation/assistant-types";
-import { createDialoguePlanner } from "../../../src/providers/dialogue";
+import { createAssistantProviders } from "../../../src/providers/assistant";
 import { getStoreDirections } from "../../../src/persistence/store-directions";
 export const dynamic = "force-dynamic";
 const input = z
@@ -56,6 +55,7 @@ export async function POST(request: NextRequest) {
         );
       await appendMessage(id, "user", body.text);
       const role = body.testRole;
+      const providers = createAssistantProviders();
       const result = await runAssistantTurn(
         {
           service: withAudit(getService(), id),
@@ -68,8 +68,7 @@ export async function POST(request: NextRequest) {
           },
           knowledge: await getKnowledge(),
           stores: (await getStoreDirections()).locations,
-          planner: createDialoguePlanner(),
-          answerMatcher: matchCustomAnswer,
+          ...providers,
         },
         conversation.state as AssistantState,
         body.text,

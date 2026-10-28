@@ -6,6 +6,8 @@ import StoreDirectionsForm from "./directions";
 import { getStoreDirections } from "../../src/persistence/store-directions";
 import { getService } from "../../src/repair/service";
 import type { Business } from "../../src/contracts/repair";
+import AIConnection from "./ai";
+import { getAIReadiness } from "../../src/providers/readiness";
 export const dynamic = "force-dynamic";
 export default async function Settings() {
   const fixture = (process.env.RECEPTIONIST_MODE ?? "fixture") === "fixture";
@@ -19,6 +21,7 @@ export default async function Settings() {
     transferNumber: "",
   };
   const directions = await getStoreDirections();
+  const ai = await getAIReadiness();
   let sourceLocations: Business["locations"] = [];
   try {
     const source = await getService().business();
@@ -64,6 +67,7 @@ export default async function Settings() {
             sourceLocations={sourceLocations}
           />
         </section>
+        <AIConnection initial={ai} />
         <section className="panel">
           <div className="section-heading">
             <h2>Connections & readiness</h2>
@@ -83,9 +87,11 @@ export default async function Settings() {
             [
               "AI provider",
               "Uses your saved shop information to guide follow-up questions.",
-              process.env.AI_PROVIDER_KEY
-                ? "Configured · live test required"
-                : "Test mode",
+              ai.lastCheck?.ok
+                ? "Connection check passed"
+                : ai.configured
+                  ? "Configured · see connection check"
+                  : "Not configured",
             ],
             [
               "Customer verification",

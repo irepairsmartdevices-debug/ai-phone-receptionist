@@ -11,12 +11,11 @@ import { validateTwilioSignature, voiceResponse } from "../providers/twilio";
 import { type State, type Actor } from "../conversation/engine";
 import { runAssistantTurn } from "../conversation/assistant";
 import type { AssistantState } from "../conversation/assistant-types";
-import { createDialoguePlanner } from "../providers/dialogue";
+import { createAssistantProviders } from "../providers/assistant";
 import { getStoreDirections } from "../persistence/store-directions";
 import { withAudit } from "../repair/audit";
 import { getService } from "../repair/service";
 import { getKnowledge } from "../knowledge/store";
-import { matchCustomAnswer } from "../providers/knowledge";
 const xml = (body: string) =>
   new Response(body, {
     headers: { "Content-Type": "text/xml", "Cache-Control": "no-store" },
@@ -170,6 +169,7 @@ export async function handleVoiceWebhook(
           if (session)
             actor = { role: session.role, grant: session.staff_grant };
         }
+        const providers = createAssistantProviders(env);
         const result = await runAssistantTurn(
           {
             service: withAudit(getService(), call.conversation_id),
@@ -182,9 +182,7 @@ export async function handleVoiceWebhook(
             },
             knowledge: await getKnowledge(),
             stores: (await getStoreDirections()).locations,
-            planner: createDialoguePlanner(env.AI_PROVIDER_KEY),
-            answerMatcher: (question, answers) =>
-              matchCustomAnswer(question, answers, env.AI_PROVIDER_KEY),
+            ...providers,
           },
           state,
           text,

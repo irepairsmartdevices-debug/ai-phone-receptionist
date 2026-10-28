@@ -1,6 +1,6 @@
 # Gemini receptionist understanding and conversation
 
-Status: proposed for owner review; implementation has not started.
+Status: owner approved ("go ahead"); implementation in progress.
 
 ## Intent and owner requirements
 

@@ -184,3 +184,14 @@ locations. Ticket codes, pricing clarification, booking confirmation and persona
 repair intake retain their existing workflows. A topic label is an admin label,
 not a template variable; the receptionist uses the saved question and trigger phrases.
 Existing unnamed questions remain available without a database migration.
+
+
+## Google Gemini receptionist
+
+The selected Gemini provider uses the same chat and voice conversation engine, with
+contextual follow-up goals, explicit observational memory, and current catalog
+references. Keep managing prices in the repair app and custom topic answers here.
+See [Gemini setup](docs/integration/gemini-setup.md) for the three server-side
+Production variables and the administrator **Test Gemini connection** control.
+A configured key and a passed provider check are reported separately. Existing
+OpenAI configuration remains compatible until `AI_PROVIDER=gemini` is selected.
