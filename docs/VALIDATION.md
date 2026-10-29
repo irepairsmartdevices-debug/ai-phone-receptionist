@@ -421,3 +421,32 @@ All 194 Node tests and the production build passed. The Next manifest retains th
 60-second check limit with no ignored route-level region export. Independent
 final diff review found no material issues; whitespace checks passed. No real
 Google API call was sent during validation.
+
+## Retain safe Google 503 details (2026-10-29 UTC)
+
+The owner's Production check on commit `313dfe2` confirmed `sfo1` placement but
+still received HTTP 503 after 6.1 seconds. The region comparison did not resolve
+the failure. Investigation identified an observability gap: the existing error
+reader parsed HTTP 400 bodies but discarded all HTTP 503 bodies.
+
+The reader now parses 400 and 503 using its existing 64 KiB bound and request
+deadline. HTTP classification is unchanged; the key-rejection override still
+applies only to HTTP 400. Existing allowlisted provider status/reason fields can
+now survive a 503. New optional fields retain only a fixed content-type category
+and a fixed high-demand hint when the bounded message contains Google's known
+phrase. The phrase is present in the official cookbook at
+`google-gemini/cookbook@b06b824cf2ea29f9543ffa14adcee68b5f934a9b`,
+`examples/hybrid_file_search_and_google_search.ipynb`. This is a hint, not a
+fabricated ErrorInfo reason or proof of the live failure's cause.
+
+Validation: 201/201 Node tests passed, including six new error-body cases and one
+DB round trip. Malformed/oversized and private bodies fail safely; interrupted
+or aborted error-body reads preserve received HTTP/response-phase evidence.
+The production build and separate type check passed. Independent review found
+no material findings and independently reran all six error-body tests.
+
+The update adds no requests, retries, credential changes, model changes, region
+changes or deadline extensions. No real Google request was sent from the cloud.
+Chromium against the local production build also passed: synthetic 503 status,
+high-demand hint and content type render, persist after reload, omit private
+values and fit a 390px screen. Whitespace checks passed.

@@ -93,11 +93,19 @@ server region in the next check's details; account-plan validation still occurs
 on Vercel. This comparison does not establish that a region caused the earlier
 503 responses. No account plan or billing setting is changed.
 
-For HTTP 400 responses, details also show recognized provider status codes,
+For HTTP 400 and 503 responses, details also show recognized provider status codes,
 recognized API/project rejection reasons, and known request-setting names when
 Google supplies them. Values come from fixed allowlists; error descriptions and
 arbitrary field names are discarded. A setting mentioned in an error is a
 diagnostic hint, not a claim that changing it will resolve the request.
+
+For a 503 response, the panel also shows a fixed content-type category. If the
+bounded provider message contains Google's documented phrase "This model is
+currently experiencing high demand", it reports a separate high-demand hint.
+This hint is not an `ErrorInfo` reason or a confirmed root cause. Raw messages
+and header values remain omitted. Reading an error body uses the same existing
+request deadline, so a stalled error body can use the remaining check time;
+received HTTP status and response-phase evidence remain available.
 
 Checks are administrator-only and protected by the normal same-origin rule. A
 45-second shared reservation prevents concurrent button clicks from sending repeated

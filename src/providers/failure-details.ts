@@ -8,6 +8,10 @@ export const apiKeyErrorReasons = [
   "API_KEY_IP_ADDRESS_BLOCKED",
 ] as const;
 export const providerErrorDetailsSchema = z.object({
+  providerNotice: z.literal("high_demand").optional(),
+  providerContentType: z
+    .enum(["json", "html", "text", "other", "empty"])
+    .optional(),
   providerCode: z
     .enum([
       "INVALID_ARGUMENT",
@@ -118,6 +122,9 @@ export function readProviderErrorDetails(
   )
     named.push("generation_config");
   const safe = providerErrorDetailsSchema.parse({
+    ...(/\bthis model is currently experiencing high demand\b/i.test(message)
+      ? { providerNotice: "high_demand" }
+      : {}),
     ...(code.success && code.data ? { providerCode: code.data } : {}),
     ...(reason ? { providerReason: reason } : {}),
     ...(named.length ? { parameters: named } : {}),

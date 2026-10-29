@@ -286,6 +286,31 @@ test("Google request errors retain only safe status and request-setting hints", 
   );
 });
 
+test("Google service-unavailable notices survive reload without private messages", async () => {
+  const isolated = { ...env, GEMINI_API_KEY: "private-service-notice-key" };
+  const checked = await runAIConnectionCheck(isolated, async () =>
+    Response.json(
+      {
+        error: {
+          status: "UNAVAILABLE",
+          message:
+            "This model is currently experiencing high demand. private-message-and-key",
+        },
+      },
+      { status: 503 },
+    ),
+  );
+  const detail = checked.readiness.lastCheck?.diagnostic;
+  assert.equal(detail?.providerCode, "UNAVAILABLE");
+  assert.equal(detail?.providerNotice, "high_demand");
+  assert.equal(detail?.providerContentType, "json");
+  assert.deepEqual(
+    (await getAIReadiness(isolated)).lastCheck?.diagnostic,
+    detail,
+  );
+  assert.doesNotMatch(JSON.stringify(checked), /private-|message-and-key/);
+});
+
 test("Google API-key rejection details remain explicit without exposing the key", async () => {
   const isolated = { ...env, GEMINI_API_KEY: "private-request-key-rejection" };
   const checked = await runAIConnectionCheck(isolated, async () =>

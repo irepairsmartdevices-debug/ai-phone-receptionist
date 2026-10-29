@@ -71,16 +71,39 @@ export function httpFailure(status: number): AIErrorReason {
   return "unavailable";
 }
 
-/** Google's rejected API keys can use HTTP 400 with structured ErrorInfo. */
+/** Keep safe request-error and service-unavailable details without raw messages. */
 export async function responseFailure(
   response: Response,
 ): Promise<AIProviderError> {
   const fallback = httpFailure(response.status);
-  if (response.status !== 400) return new AIProviderError(fallback);
+  if (response.status !== 400 && response.status !== 503)
+    return new AIProviderError(fallback);
   let details: ProviderErrorDetails | undefined;
+  if (response.status === 503) {
+    const mime = response.headers
+      .get("content-type")
+      ?.split(";")[0]
+      .trim()
+      .toLowerCase();
+    details = {
+      providerContentType: !response.body
+        ? "empty"
+        : mime === "application/json" || mime?.endsWith("+json")
+          ? "json"
+          : mime === "text/html"
+            ? "html"
+            : mime === "text/plain"
+              ? "text"
+              : "other",
+    };
+  }
   try {
-    details = readProviderErrorDetails(await readProviderJSON(response));
+    const bodyDetails = readProviderErrorDetails(
+      await readProviderJSON(response),
+    );
+    if (bodyDetails) details = { ...details, ...bodyDetails };
     if (
+      response.status === 400 &&
       details?.providerReason &&
       apiKeyErrorReasons.some((reason) => reason === details?.providerReason)
     )
