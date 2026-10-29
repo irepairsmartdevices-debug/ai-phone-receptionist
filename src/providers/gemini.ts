@@ -235,7 +235,7 @@ export async function generateGeminiJSON(
   timeoutMs = 8000,
   errorDiagnostics = false,
 ): Promise<unknown> {
-  if (model === "gemini-3.8-flash")
+  if (model === "gemini-3.8-flash" || model === "gemini-3.7-flash")
     return generateGeminiInteractionJSON(
       key,
       model,

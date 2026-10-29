@@ -476,3 +476,29 @@ Separate type checking and whitespace checks passed. Chromium against the local
 production build confirmed admin code/message display, exact-key/contact/metadata
 redaction, HTML escaping, reload persistence and 390px layout. The UI test used a
 synthetic transport; it did not call Google.
+
+## Explicit Gemini 3.7 Flash alternative (2026-10-29 UTC)
+
+The owner's deployed `5c4a527` check returned HTTP 503 after 2.0 seconds in
+`sfo1`, with `service_unavailable` and Google's message that `gemini-3.8-flash`
+is experiencing high demand. This provides a provider capacity explanation for
+that request; it does not identify a missing environment variable.
+
+The exact `gemini-3.7-flash` model now uses the same structured Interactions
+adapter as 3.8. Google's Python SDK at
+`34b58fd1b2aa387dff5976bbefa1c1268958369f` enumerates 3.7 in the Interactions
+model type; the cookbook at `b06b824cf2ea29f9543ffa14adcee68b5f934a9b` includes
+3.7 in its thinking and JSON-mode examples. The existing key and
+`thinking_level: "medium"` request settings are retained. The default stays 3.8;
+the owner must explicitly select 3.7 with `GEMINI_MODEL` and redeploy. No automatic
+model fallback, retry, deadline, region or customer-data changes were added.
+
+Both new 3.7 consumer tests failed against the previous dispatcher, then passed
+after the change. They cover the connection check and planning/matching through
+the documented REST response, approved IDs, redacted public context and the
+shared single-request budget. Existing 3.8 and legacy-model coverage remains.
+Validation: full Node suite 208/208 passed; production build, separate type
+checking and whitespace checks passed. Independent review found no issues and
+independently passed 34 provider tests. No real Google request was sent from
+this environment. Deployed 3.7 availability,
+latency and conversation behavior still need to be verified by the owner.

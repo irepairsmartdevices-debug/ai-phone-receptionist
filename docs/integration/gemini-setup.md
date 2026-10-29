@@ -1,8 +1,9 @@
 # Connect Google Gemini
 
 The receptionist supports Gemini through the shared simulator and phone dialogue
-engine. The exact `gemini-3.8-flash` model uses Google's Interactions API, matching
-the owner's Google AI Studio export. Other configured Gemini models retain the
+engine. The exact `gemini-3.8-flash` and `gemini-3.7-flash` models use Google's
+Interactions API, following the owner's Google AI Studio export and Google's
+documented structured-output contract. Other configured Gemini models retain the
 existing generateContent path. Gemini Live audio streaming is separate.
 The existing repair integration supplies current prices and exact model variants.
 
@@ -29,8 +30,9 @@ The existing repair integration supplies current prices and exact model variants
    model and symptoms, then ask about a known repair price. Compare with the repair
    app. The check proves provider access, not every conversation outcome.
 
-The explicit Gemini 3.8 Flash model uses `thinking_level: "medium"`, matching the
-owner's export. Its Interactions request uses `store:false`, `stream:false` and
+The explicit Gemini 3.8 Flash and 3.7 Flash models use `thinking_level: "medium"`,
+matching the owner's export and Google's documented Flash settings. Their
+Interactions requests use `store:false`, `stream:false` and
 `background:false`, with the existing bounded public input and JSON schema. The
 adapter reads completed model-output text steps from raw REST, ignores thoughts,
 and rejects incomplete, errored, tool, nontext or ambiguous results. It does not
@@ -61,6 +63,12 @@ Use `AI_PROVIDER=openai` to deliberately restore the earlier OpenAI provider, or
 - Usage limit: check Google's quota/billing for the selected project.
 - Timeout/unavailable: retry later. No repeated automatic paid retries occur.
 - Unsupported response: check the model supports structured JSON output.
+
+If Google explicitly reports that `gemini-3.8-flash` is experiencing high demand,
+you can try `gemini-3.7-flash`: edit only `GEMINI_MODEL` under **Production**, save,
+redeploy, then test the connection again. Keep the existing `GEMINI_API_KEY`.
+The app uses the same Interactions request format for both models. This is an
+explicit model choice; availability and capacity still need a successful check.
 
 After a new check, expand **Test details** to see its elapsed time, whether it
 stopped before or after response headers, and any received HTTP status. A timeout

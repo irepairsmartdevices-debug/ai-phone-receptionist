@@ -54,10 +54,10 @@ const plan = {
   catalogOfferingId: "pixel-screen",
 };
 // Raw REST fixture: output_text is an SDK convenience and is absent here.
-const interaction = (value: unknown) => ({
+const interaction = (value: unknown, model = "gemini-3.8-flash") => ({
   id: "synthetic-interaction",
   status: "completed",
-  model: "gemini-3.8-flash",
+  model,
   steps: [
     {
       type: "thought",
@@ -71,73 +71,90 @@ const interaction = (value: unknown) => ({
   ],
 });
 
-test("default Gemini check succeeds against the exported Interactions API contract", async () => {
-  const requests: { url: string; init: RequestInit | undefined }[] = [];
-  const checked = await checkAIConnection(env, async (url, init) => {
-    requests.push({ url: String(url), init });
-    return String(url) ===
-      "https://generativelanguage.googleapis.com/v1beta/interactions"
-      ? Response.json(interaction({ ok: true }))
-      : Response.json(
-          { error: { status: "INVALID_ARGUMENT" } },
-          { status: 400 },
-        );
+for (const { label, settings, model } of [
+  { label: "default Gemini", settings: env, model: "gemini-3.8-flash" },
+  {
+    label: "explicit Gemini 3.7 Flash",
+    settings: { ...env, GEMINI_MODEL: "gemini-3.7-flash" },
+    model: "gemini-3.7-flash",
+  },
+]) {
+  test(`${label} check succeeds against the documented Interactions API contract`, async () => {
+    const requests: { url: string; init: RequestInit | undefined }[] = [];
+    const checked = await checkAIConnection(settings, async (url, init) => {
+      requests.push({ url: String(url), init });
+      return String(url) ===
+        "https://generativelanguage.googleapis.com/v1beta/interactions"
+        ? Response.json(interaction({ ok: true }, model))
+        : Response.json(
+            { error: { status: "INVALID_ARGUMENT" } },
+            { status: 400 },
+          );
+    });
+    assert.equal(checked.ok, true);
+    assert.equal(checked.model, model);
+    assert.equal(requests.length, 1);
+    const { init } = requests[0];
+    assert.equal(init?.method, "POST");
+    assert.equal(init?.redirect, "error");
+    assert.ok(init?.signal);
+    assert.equal(
+      new Headers(init?.headers).get("x-goog-api-key"),
+      env.GEMINI_API_KEY,
+    );
+    const body = JSON.parse(String(init?.body));
+    assert.equal(body.model, model);
+    assert.equal(body.input, '{"check":"connection"}');
+    assert.equal(body.store, false);
+    assert.equal(body.stream, false);
+    assert.equal(body.background, false);
+    assert.equal(body.generation_config.thinking_level, "medium");
+    assert.equal(body.generation_config.max_output_tokens, 512);
+    assert.equal(body.generation_config.temperature, undefined);
+    assert.equal(body.response_format.type, "text");
+    assert.equal(body.response_format.mime_type, "application/json");
+    assert.equal(body.response_format.schema.properties.ok.type, "boolean");
+    assert.equal(body.previous_interaction_id, undefined);
+    assert.equal(body.tools, undefined);
+    assert.doesNotMatch(
+      JSON.stringify(body),
+      /customer|private-interactions-test-key/,
+    );
   });
-  assert.equal(checked.ok, true);
-  assert.equal(checked.model, "gemini-3.8-flash");
-  assert.equal(requests.length, 1);
-  const { init } = requests[0];
-  assert.equal(init?.method, "POST");
-  assert.equal(init?.redirect, "error");
-  assert.ok(init?.signal);
-  assert.equal(
-    new Headers(init?.headers).get("x-goog-api-key"),
-    env.GEMINI_API_KEY,
-  );
-  const body = JSON.parse(String(init?.body));
-  assert.equal(body.model, "gemini-3.8-flash");
-  assert.equal(body.input, '{"check":"connection"}');
-  assert.equal(body.store, false);
-  assert.equal(body.stream, false);
-  assert.equal(body.background, false);
-  assert.equal(body.generation_config.thinking_level, "medium");
-  assert.equal(body.generation_config.max_output_tokens, 512);
-  assert.equal(body.generation_config.temperature, undefined);
-  assert.equal(body.response_format.type, "text");
-  assert.equal(body.response_format.mime_type, "application/json");
-  assert.equal(body.response_format.schema.properties.ok.type, "boolean");
-  assert.equal(body.previous_interaction_id, undefined);
-  assert.equal(body.tools, undefined);
-  assert.doesNotMatch(
-    JSON.stringify(body),
-    /customer|private-interactions-test-key/,
-  );
-});
 
-test("Interactions planning preserves public context, ignores thoughts and shares one request with matching", async () => {
-  let calls = 0;
-  let sent = "";
-  const providers = createAssistantProviders(env, async (_url, init) => {
-    calls++;
-    sent = String(init?.body);
-    return Response.json(interaction(plan));
+  test(`${label} Interactions planning preserves public context and shares one request with matching`, async () => {
+    let calls = 0;
+    let sent = "";
+    let requestedURL = "";
+    const providers = createAssistantProviders(settings, async (url, init) => {
+      calls++;
+      requestedURL = String(url);
+      sent = String(init?.body);
+      return Response.json(interaction(plan, model));
+    });
+    const [result, answerId] = await Promise.all([
+      providers.planner(input),
+      providers.answerMatcher(input.text, answers),
+    ]);
+    assert.deepEqual(result, plan);
+    assert.equal(answerId, "water");
+    assert.equal(calls, 1);
+    assert.equal(
+      requestedURL,
+      "https://generativelanguage.googleapis.com/v1beta/interactions",
+    );
+    const body = JSON.parse(sent);
+    assert.equal(body.model, model);
+    assert.equal(body.generation_config.thinking_level, "medium");
+    assert.match(body.input, /Pixel 9|pixel-screen/);
+    assert.doesNotMatch(
+      sent,
+      /alice@example.com|123456|PRIVATE-OWNER-ANSWER|PRIVATE-TICKET-HISTORY/,
+    );
+    assert.equal(body.generation_config.max_output_tokens, 2048);
+    assert.ok(body.response_format.schema.properties.nextGoal);
   });
-  const [result, answerId] = await Promise.all([
-    providers.planner(input),
-    providers.answerMatcher(input.text, answers),
-  ]);
-  assert.deepEqual(result, plan);
-  assert.equal(answerId, "water");
-  assert.equal(calls, 1);
-  const body = JSON.parse(sent);
-  assert.match(body.input, /Pixel 9|pixel-screen/);
-  assert.doesNotMatch(
-    sent,
-    /alice@example.com|123456|PRIVATE-OWNER-ANSWER|PRIVATE-TICKET-HISTORY/,
-  );
-  assert.equal(body.generation_config.max_output_tokens, 2048);
-  assert.ok(body.response_format.schema.properties.nextGoal);
-});
+}
 
 test("Interactions rejects noncompleted, errored, tool, nontext and ambiguous output", async () => {
   const good = interaction(plan);

@@ -656,7 +656,7 @@ test("catalog and answer budgets reject references omitted from bounded public c
 
 test("legacy model thinking settings remain compatible", async () => {
   await checkAIConnection(
-    { ...env, GEMINI_MODEL: "gemini-3.7-flash" },
+    { ...env, GEMINI_MODEL: "gemini-3.6-flash" },
     async (_url, init) => {
       assert.equal(
         JSON.parse(String(init?.body)).generationConfig.thinkingConfig
