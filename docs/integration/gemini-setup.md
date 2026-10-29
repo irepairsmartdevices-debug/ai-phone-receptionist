@@ -83,6 +83,13 @@ provide observable events; it does not prove a network connection failed. The
 30-second health deadline, eight-second customer deadline and provider transport
 remain unchanged.
 
+The administrator connection-check route currently requests the single `sfo1`
+region as a controlled comparison with the observed `iad1` failures. Customer
+conversation and call routes keep their existing deployment settings. Confirm
+the actual server region in the next check's details; a platform may reject or
+override region preferences. This comparison does not establish that a region
+caused the earlier 503 responses. No account plan or billing setting is changed.
+
 For HTTP 400 responses, details also show recognized provider status codes,
 recognized API/project rejection reasons, and known request-setting names when
 Google supplies them. Values come from fixed allowlists; error descriptions and

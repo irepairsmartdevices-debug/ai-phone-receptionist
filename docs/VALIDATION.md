@@ -368,3 +368,25 @@ Validation:
 
 No real Google request was sent during validation. Production access remains
 unverified pending a new deployed test with these observations available.
+
+## Administrator check region comparison (2026-10-29 UTC)
+
+Production commit `8d7fcd9` reported Gemini Interactions, Node 24.21.0, server
+region `iad1`, and HTTP 503 after 5.3 seconds with response headers observed.
+The app established a connection on that attempt; the existing evidence does not
+identify why the service returned 503. The owner's earlier exact Colab control
+completed successfully, which warrants comparing hosting paths without altering
+the request payload, model, API key, transport, deadlines or response validation.
+
+Only `/api/ai/check` now requests `preferredRegion = "sfo1"`. Customer chat and
+voice route preferences remain unchanged. Next 15 documents this per-route
+configuration and emits it in its function manifest; platform account-plan
+validation remains external. No paid plan is enabled. The actual region shown in
+a deployed check is required to interpret the comparison.
+
+Validation: all 194 Node tests and the production build passed. The emitted
+`.next/server/functions-config-manifest.json` contains exactly one region
+override: `/api/ai/check` has `regions:["sfo1"]` and retains `maxDuration:60`.
+Independent diff review found no material issues; whitespace checks passed.
+No real Google request was sent, and deployment/region acceptance is unverified
+until the owner observes the next Production build and check result.
