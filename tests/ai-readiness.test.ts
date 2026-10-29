@@ -311,6 +311,39 @@ test("Google service-unavailable notices survive reload without private messages
   assert.doesNotMatch(JSON.stringify(checked), /private-|message-and-key/);
 });
 
+test("admin Interactions error excerpts are redacted before storage and reload", async () => {
+  const isolated = { ...env, GEMINI_API_KEY: "opaque-private-diagnostic-key" };
+  const checked = await runAIConnectionCheck(isolated, async () =>
+    Response.json(
+      {
+        error: {
+          code: "service_unavailable",
+          message: `Request failed for key ${isolated.GEMINI_API_KEY}. Contact owner@example.com.`,
+          metadata: { value: "private-metadata" },
+        },
+      },
+      { status: 503 },
+    ),
+  );
+  const detail = checked.readiness.lastCheck?.diagnostic;
+  assert.equal(detail?.providerErrorCode, "service_unavailable");
+  assert.match(
+    detail?.providerMessage ?? "",
+    /Request failed for key \[redacted\]/,
+  );
+  assert.deepEqual(
+    (await getAIReadiness(isolated)).lastCheck?.diagnostic,
+    detail,
+  );
+  const stored = (
+    await db.query("SELECT value FROM settings WHERE key='ai:connection-check'")
+  ).rows[0].value;
+  assert.doesNotMatch(
+    JSON.stringify(stored),
+    /opaque-private-diagnostic-key|owner@example|private-metadata/,
+  );
+});
+
 test("Google API-key rejection details remain explicit without exposing the key", async () => {
   const isolated = { ...env, GEMINI_API_KEY: "private-request-key-rejection" };
   const checked = await runAIConnectionCheck(isolated, async () =>

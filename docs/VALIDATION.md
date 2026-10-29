@@ -450,3 +450,29 @@ changes or deadline extensions. No real Google request was sent from the cloud.
 Chromium against the local production build also passed: synthetic 503 status,
 high-demand hint and content type render, persist after reload, omit private
 values and fit a 390px screen. Whitespace checks passed.
+
+## Interactions error envelope and redacted admin excerpts (2026-10-29 UTC)
+
+The owner's deployed `dbbca57` check received HTTP 503 in `sfo1` after 1.6 seconds,
+with JSON content type but no recognized RPC status/reason. The official Python
+SDK at `34b58fd1b2aa387dff5976bbefa1c1268958369f`,
+`google/genai/_gaos/types/interactions/error.py`, defines Interactions errors as
+optional string/URI `code` and string `message`; its create-interaction server
+error wraps those under `error`. It does not require the RPC `status` field.
+
+Only the fixed administrator Gemini health check now opts into sanitized nested
+Interactions code/message extraction. The selected key is removed before
+truncation; credential patterns, URI userinfo/query/fragment, contacts and control
+characters are removed. Excerpts are bounded to 240/1200 characters. Whole JSON,
+metadata and headers are not rendered. The customer planner and matcher retain
+the default opt-out. HTTP classification, single-request budget, payload and
+deadlines are unchanged. Excerpts are diagnostic data, not trusted instructions.
+
+Validation: full Node suite 206/206 passed; the production build passed.
+Independent review found no material findings and independently ran all 10
+targeted message/server-error tests. The new DB test proves key/contact/metadata
+redaction before storage and after reload. No real Google request was sent.
+Separate type checking and whitespace checks passed. Chromium against the local
+production build confirmed admin code/message display, exact-key/contact/metadata
+redaction, HTML escaping, reload persistence and 390px layout. The UI test used a
+synthetic transport; it did not call Google.

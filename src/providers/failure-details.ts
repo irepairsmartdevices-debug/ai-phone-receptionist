@@ -8,6 +8,8 @@ export const apiKeyErrorReasons = [
   "API_KEY_IP_ADDRESS_BLOCKED",
 ] as const;
 export const providerErrorDetailsSchema = z.object({
+  providerErrorCode: z.string().min(1).max(240).optional(),
+  providerMessage: z.string().min(1).max(1200).optional(),
   providerNotice: z.literal("high_demand").optional(),
   providerContentType: z
     .enum(["json", "html", "text", "other", "empty"])
@@ -78,9 +80,37 @@ const record = (value: unknown): Record<string, unknown> =>
     ? (value as Record<string, unknown>)
     : {};
 
-/** Reduce private error bodies to fixed literals; never return descriptions/messages. */
+function redactDiagnostic(value: string, secret: string, maximum: number) {
+  // Redact before truncation so a boundary cannot expose part of the key.
+  return value
+    .split(secret)
+    .join("[redacted]")
+    .replace(/\bAIza[A-Za-z0-9_-]{20,}\b/g, "[redacted]")
+    .replace(/\bsk-[A-Za-z0-9_-]{16,}\b/g, "[redacted]")
+    .replace(/\bBearer\s+[^\s,;]+/gi, "Bearer [redacted]")
+    .replace(/https?:\/\/[^\s<>"']+/gi, (value) => {
+      try {
+        const url = new URL(value);
+        url.username = "";
+        url.password = "";
+        url.search = "";
+        url.hash = "";
+        return url.toString();
+      } catch {
+        return "[URL redacted]";
+      }
+    })
+    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "[email redacted]")
+    .replace(/(?<!\w)\+?\d[\d(). -]{6,}\d(?!\w)/g, "[contact redacted]")
+    .replace(/[\u0000-\u001f\u007f]/g, " ")
+    .trim()
+    .slice(0, maximum);
+}
+
+/** Fixed fields by default; only an explicit admin check may capture redacted text. */
 export function readProviderErrorDetails(
   raw: unknown,
+  diagnosticKey?: string,
 ): ProviderErrorDetails | undefined {
   const error = record(record(raw).error);
   const code = providerErrorDetailsSchema.shape.providerCode.safeParse(
@@ -129,5 +159,20 @@ export function readProviderErrorDetails(
     ...(reason ? { providerReason: reason } : {}),
     ...(named.length ? { parameters: named } : {}),
   });
+  // Interactions defines a string/URI code and message, rather than RPC status.
+  // The selected secret is supplied only by the fixed administrator health check.
+  if (
+    diagnosticKey &&
+    (typeof error.code === "string" || error.status === undefined)
+  ) {
+    if (typeof error.code === "string") {
+      const value = redactDiagnostic(error.code, diagnosticKey, 240);
+      if (value) safe.providerErrorCode = value;
+    }
+    if (typeof error.message === "string") {
+      const value = redactDiagnostic(error.message, diagnosticKey, 1200);
+      if (value) safe.providerMessage = value;
+    }
+  }
   return Object.keys(safe).length ? safe : undefined;
 }

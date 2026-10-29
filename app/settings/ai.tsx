@@ -175,6 +175,18 @@ export default function AIConnection({ initial }: { initial: AIReadiness }) {
           {state.lastCheck.diagnostic.providerReason && (
             <p>Provider reason: {state.lastCheck.diagnostic.providerReason}</p>
           )}
+          {state.lastCheck.diagnostic.providerErrorCode && (
+            <p style={{ overflowWrap: "anywhere" }}>
+              Provider error code:{" "}
+              {state.lastCheck.diagnostic.providerErrorCode}
+            </p>
+          )}
+          {state.lastCheck.diagnostic.providerMessage && (
+            <p style={{ overflowWrap: "anywhere" }}>
+              Provider message (redacted):{" "}
+              {state.lastCheck.diagnostic.providerMessage}
+            </p>
+          )}
           {state.lastCheck.diagnostic.providerNotice === "high_demand" && (
             <p>Provider message hint: high model demand.</p>
           )}

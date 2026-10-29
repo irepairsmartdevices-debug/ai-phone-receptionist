@@ -233,6 +233,7 @@ export async function generateGeminiJSON(
   fetcher: typeof fetch,
   maxOutputTokens = 2048,
   timeoutMs = 8000,
+  errorDiagnostics = false,
 ): Promise<unknown> {
   if (model === "gemini-3.8-flash")
     return generateGeminiInteractionJSON(
@@ -244,6 +245,7 @@ export async function generateGeminiJSON(
       fetcher,
       maxOutputTokens,
       timeoutMs,
+      errorDiagnostics,
     );
   const response = await fetcher(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
@@ -272,7 +274,8 @@ export async function generateGeminiJSON(
       }),
     },
   );
-  if (!response.ok) throw await responseFailure(response);
+  if (!response.ok)
+    throw await responseFailure(response, errorDiagnostics ? key : undefined);
   const parsed = responseSchema.safeParse(await readProviderJSON(response));
   if (!parsed.success) throw new AIProviderError("response");
   const raw = parsed.data;
@@ -353,6 +356,7 @@ export async function checkGeminiConnection(
     512,
     // Admin diagnostics can wait longer than a customer conversation.
     30_000,
+    true,
   );
   if (
     !z

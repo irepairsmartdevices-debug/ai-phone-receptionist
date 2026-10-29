@@ -37,6 +37,7 @@ export async function generateGeminiInteractionJSON(
   fetcher: typeof fetch,
   maxOutputTokens: number,
   timeoutMs: number,
+  errorDiagnostics = false,
 ): Promise<unknown> {
   const response = await fetcher(
     "https://generativelanguage.googleapis.com/v1beta/interactions",
@@ -64,7 +65,8 @@ export async function generateGeminiInteractionJSON(
       }),
     },
   );
-  if (!response.ok) throw await responseFailure(response);
+  if (!response.ok)
+    throw await responseFailure(response, errorDiagnostics ? key : undefined);
   const parsed = interactionSchema.safeParse(await readProviderJSON(response));
   if (!parsed.success) throw new AIProviderError("response");
   const outputs = parsed.data.steps.filter(

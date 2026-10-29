@@ -74,6 +74,7 @@ export function httpFailure(status: number): AIErrorReason {
 /** Keep safe request-error and service-unavailable details without raw messages. */
 export async function responseFailure(
   response: Response,
+  diagnosticKey?: string,
 ): Promise<AIProviderError> {
   const fallback = httpFailure(response.status);
   if (response.status !== 400 && response.status !== 503)
@@ -100,6 +101,7 @@ export async function responseFailure(
   try {
     const bodyDetails = readProviderErrorDetails(
       await readProviderJSON(response),
+      diagnosticKey,
     );
     if (bodyDetails) details = { ...details, ...bodyDetails };
     if (

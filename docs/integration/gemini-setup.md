@@ -65,8 +65,8 @@ Use `AI_PROVIDER=openai` to deliberately restore the earlier OpenAI provider, or
 After a new check, expand **Test details** to see its elapsed time, whether it
 stopped before or after response headers, and any received HTTP status. A timeout
 reported by the provider is separate from the app's own deadline. Connection codes
-are limited to a fixed network-error allowlist; raw provider messages, URLs,
-request bodies and credentials are never included. These details observe the same
+are limited to a fixed network-error allowlist; request bodies, raw request URLs,
+headers and credentials are never included. These details observe the same
 single request and do not trigger extra requests.
 
 The check also records the actual API path as a fixed label, validated deployment
@@ -102,10 +102,20 @@ diagnostic hint, not a claim that changing it will resolve the request.
 For a 503 response, the panel also shows a fixed content-type category. If the
 bounded provider message contains Google's documented phrase "This model is
 currently experiencing high demand", it reports a separate high-demand hint.
-This hint is not an `ErrorInfo` reason or a confirmed root cause. Raw messages
-and header values remain omitted. Reading an error body uses the same existing
+This hint is not an `ErrorInfo` reason or a confirmed root cause. Header values
+and full response bodies remain omitted. Reading an error body uses the same existing
 request deadline, so a stalled error body can use the remaining check time;
 received HTTP status and response-phase evidence remain available.
+
+Interactions errors use a string/URI `error.code` and human-readable
+`error.message`, rather than the older RPC `error.status` field. The fixed
+administrator Gemini connection check may retain these two documented fields as
+redacted excerpts (240 characters for the code, 1200 for the message). It removes
+the exact selected key before truncation, credential patterns, URI credentials/
+queries/fragments, email addresses, contact numbers and control characters. Only
+nested `error.code`/`error.message` are read; metadata and full JSON are not shown.
+The UI renders escaped text. RPC-status errors keep their existing fixed-field
+projection. Customer planner/matcher requests do not enable excerpt capture.
 
 Checks are administrator-only and protected by the normal same-origin rule. A
 45-second shared reservation prevents concurrent button clicks from sending repeated
