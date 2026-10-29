@@ -28,6 +28,17 @@ const parameterNames = {
   system_instruction: "system instructions",
   generation_config: "generation settings",
 };
+const transportStages = {
+  request_created: "HTTP request created",
+  connection_ready: "Connection ready to send",
+  body_sent: "Request body written to the connection",
+  response_headers: "HTTP response headers received",
+};
+const apiNames = {
+  interactions: "Gemini Interactions",
+  generate_content: "Gemini generateContent",
+  chat_completions: "OpenAI chat completions",
+};
 export default function AIConnection({ initial }: { initial: AIReadiness }) {
   const [state, setState] = useState(initial);
   const [busy, setBusy] = useState(false);
@@ -108,6 +119,35 @@ export default function AIConnection({ initial }: { initial: AIReadiness }) {
             Waited: {(state.lastCheck.diagnostic.elapsedMs / 1000).toFixed(1)}{" "}
             seconds
           </p>
+          {state.lastCheck.diagnostic.runtime?.api && (
+            <p>API: {apiNames[state.lastCheck.diagnostic.runtime.api]}</p>
+          )}
+          {state.lastCheck.diagnostic.runtime?.deploymentCommit && (
+            <p>
+              Deployment:{" "}
+              {state.lastCheck.diagnostic.runtime.deploymentCommit.slice(0, 7)}
+            </p>
+          )}
+          {state.lastCheck.diagnostic.runtime?.region && (
+            <p>Server region: {state.lastCheck.diagnostic.runtime.region}</p>
+          )}
+          {state.lastCheck.diagnostic.runtime?.nodeVersion && (
+            <p>
+              Node version: {state.lastCheck.diagnostic.runtime.nodeVersion}
+            </p>
+          )}
+          {state.lastCheck.diagnostic.transport ? (
+            <p>
+              Last network event:{" "}
+              {transportStages[state.lastCheck.diagnostic.transport.stage]} at{" "}
+              {(state.lastCheck.diagnostic.transport.elapsedMs / 1000).toFixed(
+                1,
+              )}{" "}
+              seconds.
+            </p>
+          ) : (
+            <p>Network milestones were not reported by this runtime.</p>
+          )}
           <p>
             {state.lastCheck.diagnostic.source === "app_deadline"
               ? state.lastCheck.diagnostic.phase === "request"

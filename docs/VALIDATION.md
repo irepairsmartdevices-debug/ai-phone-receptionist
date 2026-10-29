@@ -334,3 +334,37 @@ Validation:
 
 No real Google request was sent from this cloud environment. Live access with the
 owner's private Production key still requires a fresh deployed connection check.
+
+## Provider transport observations (2026-10-29 UTC)
+
+The owner's fixed Interactions control completed in Google Colab with HTTP 200
+in 4.75 seconds; the canonical deployed receptionist continued to time out at
+30 seconds. The owner verified Production commit `56fd80b`. These observations
+narrow the investigation but do not prove a transport or provider root cause.
+Source inspection found no deterministic defect: Next 15 forwards the POST body,
+headers and signal; the check route allows 60 seconds and releases its DB client
+before starting the 30-second provider request.
+
+The existing administrator check now observes native Undici diagnostic events,
+correlated by async context and request identity. It records only a fixed last
+stage and elapsed time, plus validated API/deployment/region/Node metadata. It
+does not change fetch, timeouts, output budgets, selected provider, authentication
+or customer planning, and does not send another request. Optional fields preserve
+old stored results. Missing events remain inconclusive; a body-written event is a
+client write, not proof of Google acceptance.
+
+Validation:
+
+- Clean baseline: 186/186 Node tests passed.
+- New transport and persistence tests were observed failing before implementation.
+- Full Node suite: 194/194 passed. Six real/synthetic transport tests cover normal
+  POST milestones, a real abort before response headers, concurrent interleaving,
+  pooled connections, observer failures/cleanup, and informational headers.
+- Independent reviewer reran all six transport tests and 17 readiness tests;
+  no material findings.
+- Production build and separate TypeScript check passed; whitespace checks clean.
+- Chromium against the local production build: synthetic transport/runtime facts
+  rendered and survived reload; private values were omitted; 390px layout fit.
+
+No real Google request was sent during validation. Production access remains
+unverified pending a new deployed test with these observations available.

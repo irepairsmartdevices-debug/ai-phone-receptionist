@@ -69,6 +69,20 @@ are limited to a fixed network-error allowlist; raw provider messages, URLs,
 request bodies and credentials are never included. These details observe the same
 single request and do not trigger extra requests.
 
+The check also records the actual API path as a fixed label, validated deployment
+commit, server region and Node version when available. Native Node HTTP events
+can show the last observed milestone: request created, connection ready, request
+body written, or final response headers received. Events are correlated by async
+context and request identity, so simultaneous requests cannot exchange results.
+Observers are removed when fetch settles. No headers, body, URL, address, key or
+key-derived fingerprint is included in these milestones.
+
+These are client-side observations. A body-written event does not establish that
+Google accepted the request. No reported milestones means the runtime did not
+provide observable events; it does not prove a network connection failed. The
+30-second health deadline, eight-second customer deadline and provider transport
+remain unchanged.
+
 For HTTP 400 responses, details also show recognized provider status codes,
 recognized API/project rejection reasons, and known request-setting names when
 Google supplies them. Values come from fixed allowlists; error descriptions and

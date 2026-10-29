@@ -1,6 +1,7 @@
 import test, { before, after } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
+import { channel } from "node:diagnostics_channel";
 import { db } from "../src/persistence/db";
 import {
   getAIReadiness,
@@ -40,6 +41,68 @@ const good = () =>
       },
     ],
   });
+
+test("transport milestones and safe deployment context survive reload without request data", async () => {
+  const isolated = {
+    ...env,
+    GEMINI_API_KEY: "private-transport-context-key",
+    VERCEL_REGION: "iad1",
+    VERCEL_GIT_COMMIT_SHA: "abcdef0123456789abcdef0123456789abcdef01",
+  };
+  let calls = 0;
+  const result = await runAIConnectionCheck(isolated, async () => {
+    calls++;
+    const request = {
+      origin: "https://generativelanguage.googleapis.com",
+      path: "/v1beta/interactions",
+      method: "POST",
+      headers: "private-request-header",
+      body: "private-request-body",
+    };
+    channel("undici:request:create").publish({ request });
+    channel("undici:client:sendHeaders").publish({
+      request,
+      headers: "private-key",
+    });
+    channel("undici:request:bodySent").publish({ request });
+    return new Response("private-provider-body", { status: 503 });
+  });
+  const diagnostic = result.readiness.lastCheck?.diagnostic;
+  assert.equal(calls, 1);
+  assert.equal(diagnostic?.source, "provider_http");
+  assert.equal(diagnostic?.transport?.stage, "body_sent");
+  assert.ok(diagnostic!.transport!.elapsedMs >= 0);
+  assert.deepEqual(diagnostic?.runtime, {
+    api: "interactions",
+    nodeVersion: process.versions.node,
+    region: "iad1",
+    deploymentCommit: isolated.VERCEL_GIT_COMMIT_SHA,
+  });
+  assert.deepEqual(
+    (await getAIReadiness(isolated)).lastCheck?.diagnostic,
+    diagnostic,
+  );
+  assert.doesNotMatch(
+    JSON.stringify(result),
+    /private-|generativelanguage|fingerprint|requestId/,
+  );
+});
+
+test("unrecognized deployment metadata is omitted rather than displayed", async () => {
+  const isolated = {
+    ...env,
+    GEMINI_API_KEY: "private-invalid-metadata-key",
+    VERCEL_REGION: "private-region-value",
+    VERCEL_GIT_COMMIT_SHA: "private-commit-value",
+  };
+  const checked = await runAIConnectionCheck(isolated, async () => good());
+  const runtime = checked.readiness.lastCheck?.diagnostic?.runtime;
+  assert.equal(runtime?.api, "interactions");
+  assert.equal(runtime?.nodeVersion, process.versions.node);
+  assert.equal(runtime?.region, undefined);
+  assert.equal(runtime?.deploymentCommit, undefined);
+  assert.doesNotMatch(JSON.stringify(checked), /private-/);
+});
 
 test("a configured key stays unverified until a real structured check succeeds", async () => {
   const status = await getAIReadiness(env);
