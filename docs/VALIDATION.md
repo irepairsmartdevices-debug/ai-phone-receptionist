@@ -390,3 +390,34 @@ override: `/api/ai/check` has `regions:["sfo1"]` and retains `maxDuration:60`.
 Independent diff review found no material issues; whitespace checks passed.
 No real Google request was sent, and deployment/region acceptance is unverified
 until the owner observes the next Production build and check result.
+
+## Correct Vercel Node function region configuration (2026-10-29 UTC)
+
+The owner's Chrome and Brave screenshots show different checks, at 06:14:54 UTC
+and 06:12:55 UTC, on commit `94ad48c`. Both still report `iad1`; one timed out
+after the body was written, while the other received HTTP 503. These are not
+evidence that the browser caused the provider failure.
+
+Investigation found that Vercel's Next Node builder explicitly removes `regions`
+from the Next function manifest. The earlier local manifest inspection therefore
+did not establish deployment placement. Pinned upstream source:
+`vercel/vercel@84878e532142f0ac584953695658b324eb9e5b80`,
+`packages/next/src/utils.ts:2064-2093`. The builder supports Node function regions
+through `vercel.json`'s `functions` source-file configuration instead.
+
+The correction removes the ineffective `preferredRegion` export and adds one
+exact function entry for `app/api/ai/check/route.ts` with `regions:["sfo1"]`.
+Request body, credentials, provider/model, transport, deadlines and customer/voice
+route configuration remain unchanged. Actual Vercel placement and Google
+connectivity still require a deployed check; this does not prove a Google root
+cause or guarantee account-plan acceptance.
+
+The published `@vercel/build-utils@15.1.1` configuration resolver was installed
+in a temporary directory with scripts disabled. Executing its real
+`getLambdaOptionsFromFunction` selected `sfo1` for the exact check handler and no
+region override for chat, voice or Settings. No application dependency changed.
+
+All 194 Node tests and the production build passed. The Next manifest retains the
+60-second check limit with no ignored route-level region export. Independent
+final diff review found no material issues; whitespace checks passed. No real
+Google API call was sent during validation.
